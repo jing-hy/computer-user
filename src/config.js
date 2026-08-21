@@ -1,0 +1,36 @@
+import z from '@deepseek-ai/schemastery';
+
+/** Settings namespace for this plugin (written to DSH settings.yaml). */
+export const NS = 'computer-user';
+
+/** Runtime settings schema (schemastery). Top fields are the "just-opened" card; the rest go to Advanced. */
+export const Config = z.object({
+  enabled: z
+    .boolean()
+    .default(true)
+    .description('是否开启：关闭后所有 computer_* 工具拒绝执行（请在参数携带 confirm 无效，需在设置里开启）'),
+  require_confirmation: z
+    .boolean()
+    .default(true)
+    .description('是否要请示：开启后每次有副作用的操作（点击/输入/按键/滚动/拖拽/移动鼠标）须显式传 confirm:true 才放行'),
+  screenshot_dir: z
+    .string()
+    .default('')
+    .description('截图输出目录（空 = 系统临时目录）'),
+  default_scale: z
+    .number()
+    .default(1)
+    .description('截图默认缩放 0.1..1（1=原分辨率整屏）'),
+  typing_interval_ms: z
+    .number()
+    .default(0)
+    .description('逐字输入间隔（毫秒），越大越稳但越慢'),
+  scroll_units: z
+    .number()
+    .default(1)
+    .description('滚动刻度：一次 scroll 滚动多少格（每格 120 WHEEL delta）'),
+  debug: z
+    .boolean()
+    .default(false)
+    .description('调试日志'),
+});
