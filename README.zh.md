@@ -77,11 +77,11 @@ computer_screenshot → image_compare           # 验证
   （`HEADzzzTAIL`）；双击选词、单击取消、拖拽选区均通过控件状态断言。
 - headless 集成：`dsh --profile headless` 真实会话中，模型成功调用 `computer_screenshot`
   与 `computer_get_cursor_position`。
+- 滚轮**端到端验证通过**：滚动条位置变化 + MouseWheel 事件触发均正常。注意：鼠标若落在
+  搜狗输入法等置顶悬浮窗上，滚轮事件会被悬浮窗吸收——把光标移到空白处再滚（与任何基于
+  光标的输入同理）。
 - EAC 兼容：与 picturereader 在同一宿主内并存加载；对全部内置插件静态扫描，
   `computer_*` 工具名 / `computer-user` 命名空间零冲突。
-- 已知限制（本机环境）：滚轮事件注入成功（标准 SendInput WHEEL），但本机窗口均未消费
-  （疑似安全软件输入拦截）；点击/拖拽/键盘/输入全部正常。遇到此情况请在安全软件中关闭
-  输入保护。
 
 ## 开发
 

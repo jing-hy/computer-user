@@ -85,11 +85,13 @@ computer_screenshot → image_compare           # verify
   double-click word selection, click-to-clear, drag selection all asserted via control state.
 - Headless integration: both `computer_screenshot` and `computer_get_cursor_position`
   called successfully by the model inside a real `dsh --profile headless` session.
+- **Wheel verified**: all 9 tools (screenshot / click / type / keypress / scroll / drag /
+  move_mouse / wait / get_cursor_position) fully end-to-end verified. Wheel scroll position
+  changed and MouseWheel events fired correctly. Note: always-on-top IME toolbars (e.g.
+  Sogou Input floating bar) or other overlay windows can absorb wheel events if the cursor
+  lands on them — move the cursor to a clear area first (same as any cursor-based input).
 - EAC compatibility: loads side-by-side with picturereader in the same host; static scan of
   all built-in plugins shows zero `computer_*` / `computer-user` namespace collisions.
-- Known limit (environment): wheel events are injected successfully (SendInput WHEEL) but
-  on this machine no window consumed them (AV input filtering); other mice/keys/typing all
-  worked. If you hit this, disable input-protection in your security software.
 
 ## Development
 
