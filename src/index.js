@@ -41,6 +41,40 @@ async function setMode(mode) {
   await sourceSetter('mode', mode);
 }
 
+/**
+ * Resolve the session-target set affected by /computer from a command
+ * invocation: agent.id (SessionId) + session.header.sessionId, falling back
+ * to '__global__' when neither is present.
+ * @param {object} invocation
+ * @returns {Set<string>}
+ */
+export function sessionTargetsFromInvocation(invocation) {
+  const targets = new Set();
+  try {
+    if (invocation?.agent?.id) targets.add(String(invocation.agent.id));
+    if (invocation?.agent?.session?.header?.sessionId) targets.add(String(invocation.agent.session.header.sessionId));
+  } catch { /* ignore */ }
+  if (targets.size === 0) targets.add('__global__');
+  return targets;
+}
+
+/**
+ * Toggle approval for a set of session targets: if any target is already
+ * approved, revoke them all; otherwise approve them all.
+ * @param {Set<string>} approvedSessions
+ * @param {Set<string>} targets
+ * @returns {{approved:boolean, targets:Set<string>}}
+ */
+export function toggleApproval(approvedSessions, targets) {
+  const approved = [...targets].some((t) => approvedSessions.has(t));
+  if (approved) {
+    for (const t of targets) approvedSessions.delete(t);
+    return { approved: false, targets };
+  }
+  for (const t of targets) approvedSessions.add(t);
+  return { approved: true, targets };
+}
+
 export function apply(ctx, config) {
   // ── register tools ──
   ctx.effect(() => {
@@ -80,19 +114,13 @@ export function apply(ctx, config) {
         name: 'computer',
         description: '批准当前会话使用 computer-user 的全部工具（手动批准模式下需要）',
         handler: async (invocation) => {
-          // 批准的是「当前会话」：优先用 agent.id（SessionId），并顺带把
-          // session.header.sessionId 也加入，与工具执行时的会话 ID 匹配。
-          const targets = new Set();
-          try {
-            if (invocation?.agent?.id) targets.add(String(invocation.agent.id));
-            if (invocation?.agent?.session?.header?.sessionId) targets.add(String(invocation.agent.session.header.sessionId));
-          } catch { /* ignore */ }
-          if (targets.size === 0) targets.add('__global__');
-          for (const t of targets) approvedSessions.add(t);
-          return {
-            kind: 'success',
-            text: `✅ 已批准：computer-user 全部工具在当前会话可用（${[...targets].join(', ')}）。后续轮次也会持续生效。`,
-          };
+          // /computer 是开关：第一次批准当前会话，再按一次撤销批准。
+          const targets = sessionTargetsFromInvocation(invocation);
+          const { approved } = toggleApproval(approvedSessions, targets);
+          const ids = [...targets].join(', ');
+          return approved
+            ? { kind: 'success', text: `✅ 已批准：computer-user 全部工具在当前会话可用（${ids}）。后续轮次持续生效；再按 /computer 可撤销。` }
+            : { kind: 'success', text: `🔒 已撤销批准：computer-user 有副作用工具需重新 /computer 批准（${ids}）。` };
         },
       });
       ctx.logger?.info?.('[computer-user] /computer command registered');

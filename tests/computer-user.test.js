@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createComputerTools } from '../src/tools.js';
+import { sessionTargetsFromInvocation, toggleApproval } from '../src/index.js';
 
 function makeEnv(overrides = {}) {
   const calls = [];
@@ -95,6 +96,39 @@ test('computer_set_mode refuses while mode is disabled', async () => {
     env.byName('computer_set_mode').execute({ mode: 'auto' }, env.exec),
     /已禁用/
   );
+});
+
+// ── /computer approval toggle (sessionTargetsFromInvocation / toggleApproval) ──
+
+test('sessionTargetsFromInvocation uses agent.id + session.header.sessionId', () => {
+  const inv = { agent: { id: 'sess-1', session: { header: { sessionId: 'sess-1' } } } };
+  const t = sessionTargetsFromInvocation(inv);
+  assert.ok(t.has('sess-1'));
+});
+
+test('sessionTargetsFromInvocation falls back to __global__', () => {
+  const t = sessionTargetsFromInvocation({});
+  assert.ok(t.has('__global__'));
+});
+
+test('toggleApproval: approve then revoke', () => {
+  const set = new Set();
+  const targets = new Set(['sess-1']);
+  const r1 = toggleApproval(set, targets);
+  assert.equal(r1.approved, true);
+  assert.ok(set.has('sess-1'));
+  const r2 = toggleApproval(set, targets);
+  assert.equal(r2.approved, false);
+  assert.ok(!set.has('sess-1'));
+});
+
+test('toggleApproval: mixed targets — approves when none approved, revokes all when any approved', () => {
+  const set = new Set(['other']);
+  const targets = new Set(['sess-1', 'other']);
+  const r = toggleApproval(set, targets);
+  assert.equal(r.approved, false);
+  assert.ok(!set.has('sess-1'));
+  assert.ok(!set.has('other'));
 });
 
 // ── mode: disabled ──
