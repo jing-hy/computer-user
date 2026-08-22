@@ -5,14 +5,10 @@ export const NS = 'computer-user';
 
 /** Runtime settings schema (schemastery). Top fields are the "just-opened" card; the rest go to Advanced. */
 export const Config = z.object({
-  enabled: z
-    .boolean()
-    .default(true)
-    .description('是否开启：关闭后所有 computer_* 工具拒绝执行（请在参数携带 confirm 无效，需在设置里开启）'),
-  require_confirmation: z
-    .boolean()
-    .default(true)
-    .description('是否要请示：开启后每次有副作用的操作（点击/输入/按键/滚动/拖拽/移动鼠标）须显式传 confirm:true 才放行'),
+  mode: z
+    .enum(['disabled', 'readonly', 'manual', 'auto'])
+    .default('manual')
+    .description('运行模式：禁用=全部拒绝 | 只读=仅截图/读光标/等待 | 手动批准=需 /computer 批准后可用 | 自动=LLM自由调用'),
   screenshot_dir: z
     .string()
     .default('')

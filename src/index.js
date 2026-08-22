@@ -11,8 +11,7 @@
  * feeds to image_scan / image_ocr, then acts on it.
  *
  * Settings (namespace `computer-user`, hot-reloaded via a runtime snapshot):
- *   enabled            — master switch (false ⇒ every tool refuses)
- *   require_confirmation — ask-before-acting (side-effecting tools need confirm:true)
+ *   mode — disabled / readonly / manual / auto
  *   screenshot_dir / default_scale / typing_interval_ms / scroll_units / debug
  *
  * @module computer-user
@@ -24,19 +23,32 @@ import { createComputerTools } from './tools.js';
 import { runPs, powerShellScript } from './ps.js';
 
 export const name = 'computer-user';
-export const version = '0.1.0';
+export const version = '0.2.0';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
+
+/** In-memory set of session IDs that have been approved via /computer. */
+const approvedSessions = new Set();
 
 let sourceGetter = null;
 const getConfig = () => (sourceGetter ? sourceGetter() : undefined);
 
 export function apply(ctx, config) {
-  // ── register tools (no settings/llm service needed) ──
+  // ── register tools ──
   ctx.effect(() => {
-    for (const tool of createComputerTools({ runPs, getConfig })) {
-      ctx.tools.register(tool);
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionId: undefined })) {
+      ctx.tools.register({
+        ...tool,
+        // Wrap execute to inject the current session ID at call time
+        async execute(args, exec) {
+          const sid = exec?.agent?.session?.header?.sessionId ?? exec?.sessionId ?? '';
+          // Rebuild gate closure with the real session ID
+          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId: sid });
+          const realTool = tools.find((t) => t.name === tool.name);
+          return realTool.execute(args, exec);
+        },
+      });
     }
   });
 
@@ -46,14 +58,31 @@ export function apply(ctx, config) {
       const settingsNs = settingsNamespace(NS);
       const scope = sctx.settings.register(settingsNs, Config, { base: config });
       sourceGetter = () => scope.get();
-      scope.watch(() => { /* trigger hot reload so the runtime snapshot updates */ });
+      scope.watch(() => { /* trigger hot reload */ });
     });
   } catch (error) {
     ctx.logger?.warn?.(`[computer-user] settings disabled: ${String(error?.message ?? error)}`);
-    sourceGetter = () => ({ ...Config.create?.(), ...config });
+    sourceGetter = () => ({ ...config, mode: config?.mode ?? 'manual' });
   }
 
-  // ── debug helper: expose the bundled PowerShell scripts exist? (for tests) ──
+  // ── /computer command for session approval ──
+  try {
+    ctx.inject(['commands'], (sctx) => {
+      sctx.commands.register({
+        name: 'computer',
+        description: '批准当前会话使用 computer-user 的全部工具（手动批准模式下需要）',
+        handler: async (_args, _context) => {
+          approvedSessions.add('__global__');
+          return '✅ 已批准：computer-user 全部工具在当前会话可用。后续轮次也会持续生效。';
+        },
+      });
+      ctx.logger?.info?.('[computer-user] /computer command registered');
+    });
+  } catch (error) {
+    ctx.logger?.warn?.(`[computer-user] commands service not available: ${String(error?.message ?? error)}`);
+  }
+
+  // ── debug helper ──
   if (config?.debug) {
     ctx.logger?.info?.(`[computer-user] scripts: ${powerShellScript('capture.ps1')}, ${powerShellScript('input.ps1')}`);
   }

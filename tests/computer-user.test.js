@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { createComputerTools } from '../src/tools.js';
 
 function makeEnv(overrides = {}) {
   const calls = [];
+  const approvedSessions = new Set();
   const state = {
-    enabled: true,
-    require_confirmation: true,
+    mode: 'auto',
     screenshot_dir: '',
     default_scale: 1,
     typing_interval_ms: 0,
@@ -17,7 +15,7 @@ function makeEnv(overrides = {}) {
     ...overrides,
   };
   const getConfig = () => ({ ...state });
-  const runPs = async (script, payload, opts) => {
+  const runPs = async (script, payload, _opts) => {
     calls.push({ script, payload });
     if (script === 'capture.ps1') {
       return { ok: true, path: payload.outPath, width: 1920, height: 1080, virtual_offset: [0, 0], scale: 1 };
@@ -31,11 +29,11 @@ function makeEnv(overrides = {}) {
     if (payload.action === 'scroll') return { ok: true, cursor: payload.coordinate };
     return { ok: true, cursor: [0, 0] };
   };
-  const tools = createComputerTools({ runPs, getConfig });
+  const sessionId = 'test-session-1';
+  const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId });
   const byName = (n) => tools.find((t) => t.name === n);
-  const noSignal = { signal: undefined, agent: { session: { header: { cwd: process.cwd() } } } };
-  const exec = { signal: undefined, agent: { session: { header: { cwd: process.cwd() } } } };
-  return { tools, byName, calls, runPs, getConfig, state, exec };
+  const exec = { signal: undefined, agent: { session: { header: { cwd: process.cwd(), sessionId } } } };
+  return { tools, byName, calls, runPs, getConfig, state, exec, approvedSessions, sessionId };
 }
 
 test('registers exactly the 9 computer_* tools, all non-concurrency-safe', () => {
@@ -63,57 +61,127 @@ test('registers exactly the 9 computer_* tools, all non-concurrency-safe', () =>
   ]);
 });
 
-test('enabled=false → computer_screenshot refuses without calling runPs', async () => {
-  const env = makeEnv({ enabled: false });
+// ── mode: disabled ──
+
+test('mode=disabled → screenshot refuses', async () => {
+  const env = makeEnv({ mode: 'disabled' });
   await assert.rejects(
     env.byName('computer_screenshot').execute({}, env.exec),
-    /computer-use 已关闭/
+    /已禁用/
   );
   assert.equal(env.calls.length, 0);
 });
 
-test('require_confirmation=true → side-effecting click refuses without confirm:true', async () => {
-  const env = makeEnv({ require_confirmation: true });
+test('mode=disabled → click refuses', async () => {
+  const env = makeEnv({ mode: 'disabled' });
+  await assert.rejects(
+    env.byName('computer_click').execute({ coordinate: [10, 20] }, env.exec),
+    /已禁用/
+  );
+});
+
+// ── mode: readonly ──
+
+test('mode=readonly → screenshot allowed (read-only)', async () => {
+  const env = makeEnv({ mode: 'readonly' });
+  const res = await env.byName('computer_screenshot').execute({}, env.exec);
+  assert.equal(res.ok, true);
+});
+
+test('mode=readonly → get_cursor_position allowed', async () => {
+  const env = makeEnv({ mode: 'readonly' });
+  const res = await env.byName('computer_get_cursor_position').execute({}, env.exec);
+  assert.deepEqual([res.x, res.y], [10, 20]);
+});
+
+test('mode=readonly → wait allowed', async () => {
+  const env = makeEnv({ mode: 'readonly' });
+  const res = await env.byName('computer_wait').execute({ ms: 5 }, env.exec);
+  assert.equal(res.waited, 5);
+});
+
+test('mode=readonly → click refuses (side-effect)', async () => {
+  const env = makeEnv({ mode: 'readonly' });
+  await assert.rejects(
+    env.byName('computer_click').execute({ coordinate: [1, 2] }, env.exec),
+    /只读模式/
+  );
+});
+
+test('mode=readonly → type refuses', async () => {
+  const env = makeEnv({ mode: 'readonly' });
+  await assert.rejects(
+    env.byName('computer_type').execute({ text: 'hi' }, env.exec),
+    /只读模式/
+  );
+});
+
+// ── mode: manual (unapproved) ──
+
+test('mode=manual (unapproved) → screenshot allowed (read-only)', async () => {
+  const env = makeEnv({ mode: 'manual' });
+  const res = await env.byName('computer_screenshot').execute({}, env.exec);
+  assert.equal(res.ok, true);
+});
+
+test('mode=manual (unapproved) → click refuses with awaitingApproval', async () => {
+  const env = makeEnv({ mode: 'manual' });
   const err = await env.byName('computer_click').execute({ coordinate: [10, 20] }, env.exec).then(
     () => null,
     (e) => e
   );
   assert.ok(err);
-  assert.equal(err.awaitingConfirmation, true);
-  assert.match(err.message, /请示/);
+  assert.equal(err.awaitingApproval, true);
+  assert.match(err.message, /\/computer/);
   assert.equal(env.calls.length, 0);
 });
 
-test('require_confirmation=true + confirm:true → click runs', async () => {
-  const env = makeEnv({ require_confirmation: true });
-  const res = await env.byName('computer_click').execute({ coordinate: [10, 20], confirm: true }, env.exec);
+// ── mode: manual (approved) ──
+
+test('mode=manual + approved session → click runs', async () => {
+  const env = makeEnv({ mode: 'manual' });
+  env.approvedSessions.add(env.sessionId);
+  const res = await env.byName('computer_click').execute({ coordinate: [10, 20] }, env.exec);
   assert.deepEqual(res.clicked, [10, 20]);
   assert.equal(env.calls[0].script, 'input.ps1');
-  assert.equal(env.calls[0].payload.action, 'click');
-  assert.deepEqual(env.calls[0].payload.coordinate, [10, 20]);
 });
 
-test('require_confirmation=false → click runs without confirm', async () => {
-  const env = makeEnv({ require_confirmation: false });
-  const res = await env.byName('computer_click').execute({ coordinate: [1, 2] }, env.exec);
-  assert.deepEqual(res.clicked, [1, 2]);
-  assert.equal(env.calls.length, 1);
+test('mode=manual + approved → type runs', async () => {
+  const env = makeEnv({ mode: 'manual' });
+  env.approvedSessions.add(env.sessionId);
+  const res = await env.byName('computer_type').execute({ text: 'hi' }, env.exec);
+  assert.equal(res.chars, 2);
 });
 
-test('screenshot is NOT gated by require_confirmation (read-only) — only enabled', async () => {
-  const env = makeEnv({ require_confirmation: true });
-  const res = await env.byName('computer_screenshot').execute({}, env.exec);
-  assert.equal(res.ok, true);
-  assert.equal(env.calls[0].script, 'capture.ps1');
+// ── mode: auto ──
+
+test('mode=auto → click runs without approval', async () => {
+  const env = makeEnv({ mode: 'auto' });
+  const res = await env.byName('computer_click').execute({ coordinate: [5, 6] }, env.exec);
+  assert.deepEqual(res.clicked, [5, 6]);
 });
 
-test('screenshot writes into configured screenshot_dir (trailing path join works)', async () => {
+test('mode=auto → type runs', async () => {
+  const env = makeEnv({ mode: 'auto' });
+  const res = await env.byName('computer_type').execute({ text: '中文 test' }, env.exec);
+  assert.equal(res.chars, 7);
+});
+
+test('mode=auto (default) → keypress runs', async () => {
+  const env = makeEnv();
+  const res = await env.byName('computer_keypress').execute({ keys: ['ctrl', 'a'] }, env.exec);
+  assert.equal(res.keys, 'ctrl+a');
+});
+
+// ── functional tests (mode=auto) ──
+
+test('screenshot writes into configured screenshot_dir', async () => {
   const env = makeEnv({ screenshot_dir: 'shots' });
   const res = await env.byName('computer_screenshot').execute({}, env.exec);
   assert.match(res.path, /[/\\]shots[/\\]/);
 });
 
-test('screenshot honors explicit path (cwd-resolved)', async () => {
+test('screenshot honors explicit path', async () => {
   const env = makeEnv();
   const res = await env.byName('computer_screenshot').execute({ path: 'foo.png' }, env.exec);
   assert.ok(res.path.endsWith('foo.png'));
@@ -121,23 +189,15 @@ test('screenshot honors explicit path (cwd-resolved)', async () => {
 
 test('type passes text and typing interval', async () => {
   const env = makeEnv({ typing_interval_ms: 5 });
-  const res = await env.byName('computer_type').execute({ text: 'hello 中文', confirm: true }, env.exec);
+  const res = await env.byName('computer_type').execute({ text: 'hello 中文' }, env.exec);
   assert.equal(res.chars, 8);
-  assert.equal(env.calls[0].payload.action, 'type');
-  assert.equal(env.calls[0].payload.text, 'hello 中文');
   assert.equal(env.calls[0].payload.typingIntervalMs, 5);
-});
-
-test('keypress passes keys array', async () => {
-  const env = makeEnv();
-  const res = await env.byName('computer_keypress').execute({ keys: ['ctrl', 'c'], confirm: true }, env.exec);
-  assert.equal(res.keys, 'ctrl+c');
 });
 
 test('drag passes from/to and hold keys', async () => {
   const env = makeEnv();
   const res = await env.byName('computer_drag').execute({
-    start_coordinate: [0, 0], end_coordinate: [50, 50], hold_keys: ['shift'], confirm: true,
+    start_coordinate: [0, 0], end_coordinate: [50, 50], hold_keys: ['shift'],
   }, env.exec);
   assert.deepEqual(res.to, [50, 50]);
   assert.equal(env.calls[0].payload.holdKeys[0], 'shift');
@@ -145,25 +205,24 @@ test('drag passes from/to and hold keys', async () => {
 
 test('scroll uses config scroll_units when clicks omitted', async () => {
   const env = makeEnv({ scroll_units: 3 });
-  await env.byName('computer_scroll').execute({ coordinate: [5, 5], confirm: true }, env.exec);
+  await env.byName('computer_scroll').execute({ coordinate: [5, 5] }, env.exec);
   assert.equal(env.calls[0].payload.clicks, 3);
   assert.equal(env.calls[0].payload.direction, 'down');
 });
 
 test('move_mouse returns the moved coordinate', async () => {
   const env = makeEnv();
-  const res = await env.byName('computer_move_mouse').execute({ coordinate: [300, 400], confirm: true }, env.exec);
+  const res = await env.byName('computer_move_mouse').execute({ coordinate: [300, 400] }, env.exec);
   assert.deepEqual(res.moved_to, [300, 400]);
 });
 
-test('get_cursor_position reads position (only enabled gate)', async () => {
+test('get_cursor_position reads position', async () => {
   const env = makeEnv();
   const res = await env.byName('computer_get_cursor_position').execute({}, env.exec);
   assert.deepEqual([res.x, res.y], [10, 20]);
-  assert.equal(env.calls[0].payload.action, 'getpos');
 });
 
-test('wait resolves with ms (small real delay)', async () => {
+test('wait resolves with ms', async () => {
   const env = makeEnv();
   const t0 = Date.now();
   const res = await env.byName('computer_wait').execute({ ms: 15 }, env.exec);
