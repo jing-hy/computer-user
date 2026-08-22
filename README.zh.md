@@ -77,6 +77,9 @@ computer_screenshot → image_compare           # 验证
   （`HEADzzzTAIL`）；双击选词、单击取消、拖拽选区均通过控件状态断言。
 - headless 集成：`dsh --profile headless` 真实会话中，模型成功调用 `computer_screenshot`
   与 `computer_get_cursor_position`。
+- headless 真实场景：模型在 `dsh --profile headless` 中自主完成 5 步任务
+  （screenshot → image_scan → type "hello" → screenshot → image_ocr），协调 picturereader
+  与 computer-user 工具，OCR 确认输入文字出现在屏幕上。
 - 滚轮**端到端验证通过**：滚动条位置变化 + MouseWheel 事件触发均正常。注意：鼠标若落在
   搜狗输入法等置顶悬浮窗上，滚轮事件会被悬浮窗吸收——把光标移到空白处再滚（与任何基于
   光标的输入同理）。

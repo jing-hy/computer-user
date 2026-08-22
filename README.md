@@ -85,6 +85,10 @@ computer_screenshot → image_compare           # verify
   double-click word selection, click-to-clear, drag selection all asserted via control state.
 - Headless integration: both `computer_screenshot` and `computer_get_cursor_position`
   called successfully by the model inside a real `dsh --profile headless` session.
+- Headless real-scenario: model autonomously executed a 5-step task
+  (screenshot → image_scan → type "hello" → screenshot → image_ocr) inside
+  `dsh --profile headless`, coordinating picturereader and computer-user tools.
+  OCR confirmed the typed text appeared on screen.
 - **Wheel verified**: all 9 tools (screenshot / click / type / keypress / scroll / drag /
   move_mouse / wait / get_cursor_position) fully end-to-end verified. Wheel scroll position
   changed and MouseWheel events fired correctly. Note: always-on-top IME toolbars (e.g.
