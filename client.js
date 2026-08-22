@@ -66,6 +66,8 @@ window.__ModuleLoader__.load({
       modeManual: "手动批准",
       modeAuto: "自动",
       modeHint: "禁用=全部拒绝 | 只读=仅截图/读光标/等待 | 手动批准=需 /computer 命令批准后可用 | 自动=LLM自由调用所有工具",
+      aiCanChangeMode: "AI 可自行修改运行模式",
+      aiCanChangeModeHint: "开启后 AI 可通过 computer_set_mode 工具自行切换模式（默认关闭）。AI 修改会同步更新本下拉框。",
       advanced: "高级设置",
       screenshotDir: "截图输出目录（空 = 系统临时目录）",
       defaultScale: "截图默认缩放 0.1..1",
@@ -89,6 +91,8 @@ window.__ModuleLoader__.load({
       modeManual: "Manual approval",
       modeAuto: "Automatic",
       modeHint: "Disabled=refuse all | Read-only=screenshot/cursor/wait only | Manual approval=need /computer command to unlock | Automatic=LLM freely calls all tools",
+      aiCanChangeMode: "AI may change mode itself",
+      aiCanChangeModeHint: "When on, the AI can switch modes via the computer_set_mode tool (default off). AI changes are reflected in this dropdown.",
       advanced: "Advanced",
       screenshotDir: "Screenshot output dir (empty = OS temp)",
       defaultScale: "Screenshot default scale 0.1..1",
@@ -107,6 +111,7 @@ window.__ModuleLoader__.load({
     // Top (always visible) vs advanced (collapsed by default).
     var FIELDS = [
       { key: "mode", type: "mode", labelKey: "mode", hintKey: "modeHint" },
+      { key: "ai_can_change_mode", type: "checkbox", labelKey: "aiCanChangeMode", hintKey: "aiCanChangeModeHint" },
       { key: "screenshot_dir", type: "text", labelKey: "screenshotDir", advanced: true },
       { key: "default_scale", type: "number", labelKey: "defaultScale", advanced: true },
       { key: "typing_interval_ms", type: "number", labelKey: "typingIntervalMs", advanced: true },
@@ -114,7 +119,7 @@ window.__ModuleLoader__.load({
       { key: "debug", type: "checkbox", labelKey: "debug", advanced: true },
     ];
     var CFG_KEYS = {
-      mode: "mode",
+      mode: "mode", ai_can_change_mode: "ai_can_change_mode",
       screenshot_dir: "screenshot_dir", default_scale: "default_scale",
       typing_interval_ms: "typing_interval_ms", scroll_units: "scroll_units", debug: "debug",
     };

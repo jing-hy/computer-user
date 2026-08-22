@@ -30,15 +30,16 @@ function makeEnv(overrides = {}) {
     return { ok: true, cursor: [0, 0] };
   };
   const sessionId = 'test-session-1';
-  const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId });
+  const setMode = async (mode) => { state.mode = mode; };
+  const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId, setMode });
   const byName = (n) => tools.find((t) => t.name === n);
   const exec = { signal: undefined, agent: { session: { header: { cwd: process.cwd(), sessionId } } } };
-  return { tools, byName, calls, runPs, getConfig, state, exec, approvedSessions, sessionId };
+  return { tools, byName, calls, runPs, getConfig, state, exec, approvedSessions, sessionId, setMode };
 }
 
-test('registers exactly the 9 computer_* tools, all non-concurrency-safe', () => {
+test('registers exactly the 10 computer_* tools, all non-concurrency-safe', () => {
   const { tools } = makeEnv();
-  assert.equal(tools.length, 9);
+  assert.equal(tools.length, 10);
   for (const t of tools) {
     assert.match(t.name, /^computer_/);
     assert.equal(typeof t.execute, 'function');
@@ -56,9 +57,44 @@ test('registers exactly the 9 computer_* tools, all non-concurrency-safe', () =>
     'computer_move_mouse',
     'computer_screenshot',
     'computer_scroll',
+    'computer_set_mode',
     'computer_type',
     'computer_wait',
   ]);
+});
+
+// ── computer_set_mode ──
+
+test('computer_set_mode refuses when ai_can_change_mode is off (default)', async () => {
+  const env = makeEnv({ mode: 'auto', ai_can_change_mode: false });
+  await assert.rejects(
+    env.byName('computer_set_mode').execute({ mode: 'readonly' }, env.exec),
+    /未允许 AI 修改运行模式/
+  );
+  assert.equal(env.state.mode, 'auto');
+});
+
+test('computer_set_mode works when ai_can_change_mode is on', async () => {
+  const env = makeEnv({ mode: 'auto', ai_can_change_mode: true });
+  const res = await env.byName('computer_set_mode').execute({ mode: 'readonly' }, env.exec);
+  assert.equal(res.mode, 'readonly');
+  assert.equal(env.state.mode, 'readonly');
+});
+
+test('computer_set_mode validates unknown mode', async () => {
+  const env = makeEnv({ mode: 'auto', ai_can_change_mode: true });
+  await assert.rejects(
+    env.byName('computer_set_mode').execute({ mode: 'banana' }, env.exec),
+    /mode 必须是/
+  );
+});
+
+test('computer_set_mode refuses while mode is disabled', async () => {
+  const env = makeEnv({ mode: 'disabled', ai_can_change_mode: true });
+  await assert.rejects(
+    env.byName('computer_set_mode').execute({ mode: 'auto' }, env.exec),
+    /已禁用/
+  );
 });
 
 // ── mode: disabled ──

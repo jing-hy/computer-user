@@ -70,6 +70,9 @@ computer_screenshot → image_compare           # verify
   - `manual` — side-effecting tools need the session approved first via the `/computer`
     slash command (one approval unlocks the session for later turns).
   - `auto` — the LLM freely calls all tools.
+- **AI may change mode itself** checkbox (below the dropdown, not in Advanced):
+  off by default; when on, the AI can switch modes via `computer_set_mode` — changes are
+  written to the same settings namespace, so the dropdown stays in sync both ways.
 - **高级设置 / Advanced** (collapsed by default): screenshot output dir, default scale,
   typing interval, scroll units, debug logging.
 

@@ -9,6 +9,10 @@ export const Config = z.object({
     .union([z.const('disabled'), z.const('readonly'), z.const('manual'), z.const('auto')])
     .default('manual')
     .description('运行模式：禁用=全部拒绝 | 只读=仅截图/读光标/等待 | 手动批准=需 /computer 批准后可用 | 自动=LLM自由调用'),
+  ai_can_change_mode: z
+    .boolean()
+    .default(false)
+    .description('AI 是否可自行修改运行模式（computer_set_mode 工具是否可用），默认不可。AI 修改后同步更新设置下拉框'),
   screenshot_dir: z
     .string()
     .default('')

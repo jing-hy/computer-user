@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 
 /**
- * Build the 9 `computer_*` tools. Coordinate system: pixels relative to the
+ * Build the computer_* tools. Coordinate system: pixels relative to the
  * multi-monitor VIRTUAL SCREEN ORIGIN (returned by computer_screenshot as
  * `virtual_offset`). All screen-reading/automation is delegated to bundled
  * PowerShell scripts (capture.ps1 / input.ps1) with zero native dependencies.
  *
- * @param {{runPs:(script:string,payload:object,opts?:object)=>Promise<object>, getConfig:()=>object, approvedSessions?:Set<string>, sessionId?:string}} deps
+ * @param {{runPs:(script:string,payload:object,opts?:object)=>Promise<object>, getConfig:()=>object, approvedSessions?:Set<string>, sessionId?:string, setMode?:(mode:string)=>Promise<void>}} deps
  * @returns {Array<object>} tool definitions ready for ctx.tools.register
  */
 
@@ -29,6 +29,8 @@ const READONLY_TOOLS = new Set([
   'computer_get_cursor_position',
   'computer_wait',
 ]);
+
+const MODES = ['disabled', 'readonly', 'manual', 'auto'];
 
 /**
  * Mode gate: decide whether a tool call is allowed based on the current mode
@@ -58,6 +60,17 @@ function modeGate(cfg, toolName, approvedSessions, sessionId) {
   // mode === 'auto' or readonly tool or approved manual → allow
 }
 
+/**
+ * Validate a mode value against the allowed enum.
+ * @returns the validated mode string.
+ */
+function validateMode(value) {
+  if (typeof value !== 'string' || !MODES.includes(value)) {
+    throw new Error(`computer_set_mode: mode 必须是 ${MODES.join('/')} 之一`);
+  }
+  return value;
+}
+
 function textOut(schema, prefixLines) {
   const props = schema.properties ?? {};
   const required = (schema.required ?? []).filter((k) => k in props);
@@ -78,7 +91,7 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, setMode }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
@@ -276,6 +289,39 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     },
   };
 
+  // -- computer_set_mode: AI may change the runtime mode (if enabled) -------
+  const computerSetMode = {
+    name: 'computer_set_mode',
+    description: [
+      'Change the runtime mode to one of: disabled / readonly / manual / auto.',
+      'Only works when the setting「AI 可自行修改运行模式」(ai_can_change_mode) is on; otherwise this tool refuses.',
+      'Settings card dropdown stays in sync: the new mode is written to the computer-user settings namespace (same store the dropdown reads).',
+      'Parameters: mode (required, one of disabled/readonly/manual/auto).',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        mode: { type: 'string', enum: MODES, description: '目标运行模式：disabled/readonly/manual/auto' },
+      },
+      required: ['mode'],
+    },
+    output: textOut({ required: ['mode', 'changed_by'] }),
+    isConcurrencySafe: () => false,
+    async execute(args, _exec) {
+      if (typeof setMode !== 'function') throw new Error('computer_set_mode: 设置服务不可用');
+      const cfg = getConfig();
+      if (cfg.mode === 'disabled') {
+        throw new Error('computer-user 已禁用：无法在禁用模式下修改运行模式（需用户在设置中先解除禁用）');
+      }
+      if (cfg.ai_can_change_mode !== true) {
+        throw new Error('computer_set_mode: 当前未允许 AI 修改运行模式（设置「AI 可自行修改运行模式」未开启）');
+      }
+      const mode = validateMode(args.mode);
+      await setMode(mode);
+      return { mode, changed_by: 'ai' };
+    },
+  };
+
   const tools = [
     computerScreenshot,
     computerClick,
@@ -286,6 +332,7 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     computerMoveMouse,
     computerWait,
     computerGetCursorPosition,
+    computerSetMode,
   ];
 
   for (const tool of tools) {

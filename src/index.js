@@ -23,7 +23,7 @@ import { createComputerTools } from './tools.js';
 import { runPs, powerShellScript } from './ps.js';
 
 export const name = 'computer-user';
-export const version = '0.2.0';
+export const version = '0.3.0';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -32,19 +32,26 @@ export const inject = ['tools'];
 const approvedSessions = new Set();
 
 let sourceGetter = null;
+let sourceSetter = null;
 const getConfig = () => (sourceGetter ? sourceGetter() : undefined);
+
+/** Persist the runtime mode (used by computer_set_mode + /computer manual mode). */
+async function setMode(mode) {
+  if (typeof sourceSetter !== 'function') throw new Error('computer-user: 设置服务不可用');
+  await sourceSetter('mode', mode);
+}
 
 export function apply(ctx, config) {
   // ── register tools ──
   ctx.effect(() => {
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionId: undefined })) {
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionId: undefined, setMode })) {
       ctx.tools.register({
         ...tool,
         // Wrap execute to inject the current session ID at call time
         async execute(args, exec) {
           const sid = exec?.agent?.session?.header?.sessionId ?? exec?.sessionId ?? '';
           // Rebuild gate closure with the real session ID
-          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId: sid });
+          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId: sid, setMode });
           const realTool = tools.find((t) => t.name === tool.name);
           return realTool.execute(args, exec);
         },
@@ -58,6 +65,7 @@ export function apply(ctx, config) {
       const settingsNs = settingsNamespace(NS);
       const scope = sctx.settings.register(settingsNs, Config, { base: config });
       sourceGetter = () => scope.get();
+      sourceSetter = (key, value) => scope.set(key, value);
       scope.watch(() => { /* trigger hot reload */ });
     });
   } catch (error) {
