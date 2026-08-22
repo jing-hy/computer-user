@@ -79,9 +79,20 @@ export function apply(ctx, config) {
       sctx.commands.register({
         name: 'computer',
         description: '批准当前会话使用 computer-user 的全部工具（手动批准模式下需要）',
-        handler: async (_args, _context) => {
-          approvedSessions.add('__global__');
-          return '✅ 已批准：computer-user 全部工具在当前会话可用。后续轮次也会持续生效。';
+        handler: async (invocation) => {
+          // 批准的是「当前会话」：优先用 agent.id（SessionId），并顺带把
+          // session.header.sessionId 也加入，与工具执行时的会话 ID 匹配。
+          const targets = new Set();
+          try {
+            if (invocation?.agent?.id) targets.add(String(invocation.agent.id));
+            if (invocation?.agent?.session?.header?.sessionId) targets.add(String(invocation.agent.session.header.sessionId));
+          } catch { /* ignore */ }
+          if (targets.size === 0) targets.add('__global__');
+          for (const t of targets) approvedSessions.add(t);
+          return {
+            kind: 'success',
+            text: `✅ 已批准：computer-user 全部工具在当前会话可用（${[...targets].join(', ')}）。后续轮次也会持续生效。`,
+          };
         },
       });
       ctx.logger?.info?.('[computer-user] /computer command registered');
