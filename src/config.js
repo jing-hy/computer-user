@@ -6,7 +6,7 @@ export const NS = 'computer-user';
 /** Runtime settings schema (schemastery). Top fields are the "just-opened" card; the rest go to Advanced. */
 export const Config = z.object({
   mode: z
-    .enum(['disabled', 'readonly', 'manual', 'auto'])
+    .union([z.const('disabled'), z.const('readonly'), z.const('manual'), z.const('auto')])
     .default('manual')
     .description('运行模式：禁用=全部拒绝 | 只读=仅截图/读光标/等待 | 手动批准=需 /computer 批准后可用 | 自动=LLM自由调用'),
   screenshot_dir: z
