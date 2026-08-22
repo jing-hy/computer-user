@@ -20,6 +20,23 @@ drag → verify. **Windows only.**
 
 > 中文说明见 [README.zh.md](README.zh.md)。
 
+## Works with pure text-only models + picturereader
+
+computer-user **does not need a multimodal model or any external vision API**. Any
+**pure text-only LLM** (e.g. DeepSeek V4 Flash) can drive the desktop end-to-end:
+
+- `computer_screenshot` dumps the screen to a local PNG (no vision needed to capture).
+- **picturereader** turns that PNG into structured text the text-only model can read:
+  `image_scan` (layout/colors/regions), `image_ocr` (real text), `image_sample`
+  (texture), all local (Windows OCR / PaddleOCR / RapidOCR — no cloud).
+- The model "sees" via those descriptions, calls `computer_click` / `computer_type` /
+  … at the reported coordinates, then screenshots again to verify.
+
+So the loop is: screenshot (computer-user) → understand (picturereader) → act
+(computer-user) → verify (both) — entirely with text tokens and zero external APIs.
+See [skills/computer-use.md](skills/computer-use.md) for the locate-window → in-window
+OCR → click-once workflow.
+
 ## Tools
 
 | Tool | What it does |
@@ -74,7 +91,14 @@ computer_screenshot → image_compare           # verify
   off by default; when on, the AI can switch modes via `computer_set_mode` — changes are
   written to the same settings namespace, so the dropdown stays in sync both ways.
 - **高级设置 / Advanced** (collapsed by default): screenshot output dir, default scale,
-  typing interval, scroll units, debug logging.
+  typing interval, scroll units, **Reject code-as-text output (output guard, default on)**,
+  debug logging.
+
+**Output guard** is a host-side filter on the LLM stream: if the model writes a fake
+tool-call / XML markup as *conversation text* (e.g. `computer_click({…})` or `<invoke …>`
+typed out instead of a real call), that chunk is stripped and replaced with a one-time
+coaching note; outputting the exact same text a second time passes through unblocked.
+Turn it off in Advanced when you intentionally want code snippets in replies.
 
 ## Safety
 

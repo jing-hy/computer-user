@@ -73,6 +73,8 @@ window.__ModuleLoader__.load({
       defaultScale: "截图默认缩放 0.1..1",
       typingIntervalMs: "逐字输入间隔（毫秒）",
       scrollUnits: "滚动刻度（每格 120）",
+      outputGuard: "代码输出打回",
+      outputGuardHint: "把工具调用/伪 XML 写成对话文本时打回并提示；同内容第二次放行。关闭则不拦截。",
       debug: "调试日志",
       save: "保存",
       reset: "恢复默认",
@@ -98,6 +100,8 @@ window.__ModuleLoader__.load({
       defaultScale: "Screenshot default scale 0.1..1",
       typingIntervalMs: "Typing interval (ms)",
       scrollUnits: "Scroll units (120 per tick)",
+      outputGuard: "Reject code-as-text output",
+      outputGuardHint: "Rejects tool-call/XML written as conversation text; the same text passes on second output. Off disables.",
       debug: "Debug logging",
       save: "Save",
       reset: "Reset",
@@ -116,12 +120,14 @@ window.__ModuleLoader__.load({
       { key: "default_scale", type: "number", labelKey: "defaultScale", advanced: true },
       { key: "typing_interval_ms", type: "number", labelKey: "typingIntervalMs", advanced: true },
       { key: "scroll_units", type: "number", labelKey: "scrollUnits", advanced: true },
+      { key: "output_guard", type: "checkbox", labelKey: "outputGuard", hintKey: "outputGuardHint", advanced: true },
       { key: "debug", type: "checkbox", labelKey: "debug", advanced: true },
     ];
     var CFG_KEYS = {
       mode: "mode", ai_can_change_mode: "ai_can_change_mode",
       screenshot_dir: "screenshot_dir", default_scale: "default_scale",
-      typing_interval_ms: "typing_interval_ms", scroll_units: "scroll_units", debug: "debug",
+      typing_interval_ms: "typing_interval_ms", scroll_units: "scroll_units",
+      output_guard: "output_guard", debug: "debug",
     };
 
     function Section(props) {

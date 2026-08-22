@@ -18,6 +18,22 @@
 
 > English: [README.md](README.md)。
 
+## 纯文本模型搭配 picturereader 即可使用
+
+computer-user **不需要多模态模型，也不需要任何外部视觉 API**——任何**纯文本大模型**
+（如 DeepSeek V4 Flash）都能端到端驱动桌面：
+
+- `computer_screenshot` 把屏幕存成本地 PNG（截图本身不需要视觉）。
+- **picturereader** 把 PNG 转成纯文本模型能读的结构化描述：`image_scan`（布局/颜色/
+  regions）、`image_ocr`（真实文字，Windows OCR / PaddleOCR / RapidOCR，全本地）、
+  `image_sample`（纹理）。
+- 模型靠这些描述"看"屏幕 → 用 `computer_click` / `computer_type` / … 在报告坐标上
+  操作 → 再截图验证。
+
+闭环 = 截图（computer-user）→ 理解（picturereader）→ 操作（computer-user）→ 验证
+（两者），全程只有文本 token、零外部 API。详见 [skills/computer-use.md](skills/computer-use.md)
+的「先定位窗口 → 窗口内分块 OCR → 一击即中」流程。
+
 ## 工具
 
 | 工具 | 作用 |
@@ -69,7 +85,13 @@ computer_screenshot → image_compare           # 验证
   - `auto` 自动 —— LLM 自由调用所有工具。
 - **「AI 可自行修改运行模式」开关**（下拉框下方，不在高级设置里）：默认关闭；开启后
   AI 可用 `computer_set_mode` 切换模式，写入同一设置命名空间，**设置卡下拉框双向同步**。
-- **高级设置**（默认折叠）：截图输出目录、默认缩放、逐字输入间隔、滚动刻度、调试日志。
+- **高级设置**（默认折叠）：截图输出目录、默认缩放、逐字输入间隔、滚动刻度、
+  **代码输出打回（output guard，默认开）**、调试日志。
+
+**代码输出打回**：host 侧对 LLM 输出流的过滤器——若模型把伪工具调用/伪 XML 当**对话
+文本**输出（比如把 `computer_click({…})`、`<invoke …>` 直接打成了字而不是真正调用），
+该段会被剔除并替换为一句一次性提示；**同一内容第二次原样输出时放行不拦截**。需要故意
+在回复里展示代码片段时可到高级设置关掉。
 
 ## 安全
 
