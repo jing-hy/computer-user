@@ -8,8 +8,12 @@
   直接喂给 picturereader 的 `image_scan` / `image_ocr`，让任何纯文本模型都能"看"屏幕。
 - 另外 8 个 `computer_*` 工具，通过内置 PowerShell + Win32 `SendInput` 操作鼠标键盘
   （零原生模块、无需编译，可在 DSH/EAC 宿主进程内运行）。
-- 设置卡（「电脑操作」）把两个关键开关放在最显眼处 —— **是否开启** 与 **是否要请示**，
-  其余收进默认折叠的 **高级设置**。
+- 设置卡（「电脑操作」）顶部是**模式下拉框** —— 禁用 / 只读 / 手动批准（`/computer`）/
+  自动，其余收进默认折叠的 **高级设置**。
+- **全程纯本地、不调用外部 API**：截图（PowerShell）、分析（picturereader 本地
+  scan/OCR）、操作（Win32 SendInput），数据不出本机。操作流程见
+  [skills/computer-use.md](skills/computer-use.md)（先定位目标窗口，再窗口内分块
+  OCR，确认后一击即中并截图验证）。
 - 已验证兼容 **DeepSeek Harness EAC** 桌面端（与 Web 同一 DSH 宿主内核）。
 
 > English: [README.md](README.md)。
@@ -57,17 +61,21 @@ computer_screenshot → image_compare           # 验证
 
 ## 设置卡
 
-- **是否开启**：总开关；关闭后所有 `computer_*` 工具一律拒绝。
-- **是否要请示**：开启后，有副作用的操作（点击/输入/按键/滚动/拖拽/移动鼠标）须在调用里
-  显式传 `confirm: true` 才放行；截图/读光标/等待不受限。
+- **模式下拉框**（卡片顶部）：
+  - `disabled` 禁用 —— 所有 `computer_*` 工具一律拒绝。
+  - `readonly` 只读 —— 仅截图 / 读光标 / 等待可用。
+  - `manual` 手动批准 —— 有副作用工具需先在本会话输入 `/computer` 批准（一次批准，
+    后续轮次持续有效）。
+  - `auto` 自动 —— LLM 自由调用所有工具。
 - **高级设置**（默认折叠）：截图输出目录、默认缩放、逐字输入间隔、滚动刻度、调试日志。
 
 ## 安全
 
+- **先定位目标窗口**（DPI 感知 GetWindowRect，见 skills/computer-use.md）——
+  桌面图标/壁纸会同时干扰 OCR 与点击；只在目标窗口内工作。
 - 动手前务必 `computer_screenshot` 并用 picturereader 分析，不要盲点盲输。
-- 只操作与任务相关的窗口；**不要操作 DSH/EAC 客户端自身窗口**。
-- 结合 `confirm: true` 语义与设置卡，让操作先请示再执行。
-- 若注入输入被静默丢弃，请检查安全软件（部分杀软会过滤模拟输入）。
+- 确认坐标后一击即中，点完截图验证，不要盲目连点（很多 UI 是点击开关）。
+- 手动批准模式配合 `/computer` 命令，让人在环。
 
 ## 验证与已知限制
 

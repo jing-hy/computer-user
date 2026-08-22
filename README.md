@@ -9,9 +9,13 @@ drag → verify. **Windows only.**
   `image_ocr` to "see" the screen with any text-only model.
 - 8 more `computer_*` tools operate the mouse & keyboard through bundled PowerShell +
   Win32 `SendInput` (no native modules, no compilation, works in the DSH/EAC host process).
-- A settings card (「电脑操作 / Computer Use」) puts the two important switches up front —
-  **是否开启 / Enabled** and **是否要请示 / Ask before acting** — with the rest collapsed
-  under a default-closed **高级设置 / Advanced** section.
+- A settings card (「电脑操作 / Computer Use」) puts a **mode dropdown** up front —
+  disabled / read-only / manual approval (`/computer`) / automatic — with the rest
+  collapsed under a default-closed **高级设置 / Advanced** section.
+- **Fully local — no external API calls**: screenshot (PowerShell), analysis
+  (picturereader local scan/OCR), input (Win32 SendInput). Nothing leaves the machine.
+  Read the workflow in [skills/computer-use.md](skills/computer-use.md) (locate the
+  target window first, then OCR inside the window, then click once and verify).
 - Verified on **DeepSeek Harness EAC** desktop (same DSH host kernel as the web app).
 
 > 中文说明见 [README.zh.md](README.zh.md)。
@@ -60,19 +64,23 @@ computer_screenshot → image_compare           # verify
 
 ## Settings card
 
-- **是否开启 / Enabled** — master switch; when off every `computer_*` tool refuses.
-- **是否要请示 / Ask before acting** — when on, side-effecting operations
-  (click/type/keypress/scroll/drag/move) require an explicit `confirm: true` in the call;
-  screenshot / cursor-read / wait are not gated.
+- **Mode dropdown** at the top of the card:
+  - `disabled` — every `computer_*` tool refuses.
+  - `readonly` — only screenshot / cursor-read / wait are allowed.
+  - `manual` — side-effecting tools need the session approved first via the `/computer`
+    slash command (one approval unlocks the session for later turns).
+  - `auto` — the LLM freely calls all tools.
 - **高级设置 / Advanced** (collapsed by default): screenshot output dir, default scale,
   typing interval, scroll units, debug logging.
 
 ## Safety
 
-- Always `computer_screenshot` first and analyze it (picturereader) before acting; never
-  blind-click/type.
-- Only interact with task-relevant windows; never operate the DSH/EAC client itself.
-- Use `confirm: true` semantics and the settings card to keep a human in the loop.
+- **Locate the target window first** (DPI-aware GetWindowRect — see
+  [skills/computer-use.md](skills/computer-use.md)); desktop icons/background confuse
+  both OCR and clicks. Only work inside the target window.
+- Always `computer_screenshot` first and analyze it (picturereader) before acting.
+- Click once, screenshot to verify; never blind click repeatedly (many UIs toggle).
+- Use `manual` mode with the `/computer` command to keep a human in the loop.
 - If injected input is silently dropped, check security software (some AV suites filter
   simulated input).
 

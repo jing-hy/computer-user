@@ -1,38 +1,113 @@
-# Computer Use（电脑操作）—— 读屏 + 操作鼠标键盘
+# Computer Use（电脑操作）—— 读屏 + 操作鼠标键盘（纯本地，不调用外部 API）
 
-computer-user 插件提供 9 个 `computer_*` 工具，让你像操作自己的电脑一样操作本机
-Windows 桌面：先看屏幕，再点击/输入/按键/滚动/拖拽，再截图验证。与 picturereader
-配合构成「看 → 想 → 做 → 验」闭环。
+computer-user 插件提供 9 个 `computer_*` 工具，让纯文本模型像人手一样操作本机
+Windows 桌面：读屏 → 定位目标 → 点击/输入/按键/滚动/拖拽 → 截图验证。与
+picturereader 配合构成「看 → 想 → 做 → 验」闭环。
 
-## 标准闭环（每做一步都按这个顺序）
-1. **看**：`computer_screenshot` 截全屏 → 得到 `{ path, width, height, virtual_offset:[vx,vy] }`。
-2. **分析**：用 picturereader 的 `image_scan` / `image_ocr` 读 `path`（坐标/色块/文字）。
-3. **做**：根据分析结果调用 `computer_click` / `computer_type` / `computer_keypress` /
-   `computer_scroll` / `computer_drag` / `computer_move_mouse`。
-4. **验**：再 `computer_screenshot`，必要时 `image_compare` 对比前后，确认达到预期。
-5. 需要等动画/加载时用 `computer_wait`；想知道当前鼠标位置用 `computer_get_cursor_position`。
+> **重要**：本方案**全程纯本地、绝不调用任何外部 API**。读屏用 computer-user 的
+> `computer_screenshot`（本地 PowerShell 截图），看屏用 picturereader 的
+> `image_scan` / `image_ocr` / `image_crop` / `image_compare`（本地像素分析 + 本机
+> OCR 引擎 windows / paddle / rapid），操作用 `computer_*`（本地 Win32 SendInput）。
+> 没有任何图像、坐标、页面元素会发往云端。隐私模式 = picturereader 的
+> `mode: privacy` + computer-user 任选模式（推荐「手动批准」）。
 
-## 坐标系
-- 坐标为「相对多屏**虚拟屏原点**的像素」，不是屏幕本地坐标。原点 = 最近一次
-  `computer_screenshot` 返回的 `virtual_offset:[vx,vy]`。
-- 也就是说：若要点击某副屏/某位置，用 `computer_screenshot` 里的坐标语义，
-  操作工具的 `coordinate`/`start_coordinate`/`end_coordinate` 都填**虚拟屏坐标**。
-- 已做 DPI 感知，高分屏缩放下坐标与物理像素一致，不会偏移。
+---
 
-## 请示范例（重要）
-设置里「是否要请示」开启时，**有副作用**的操作（点击/输入/按键/滚动/拖拽/移动鼠标）
-必须显式传 `confirm: true` 才放行。截图/读光标/等待不受限制。
-```
-computer_click({ coordinate: [970, 540], confirm: true })
-computer_type({ text: "hello 世界", confirm: true })
-computer_keypress({ keys: ["ctrl", "a"], confirm: true })
-```
-若设置里「是否开启」关闭，则所有 `computer_*` 工具一律拒绝（提示去设置开启）。
+## 标准闭环（每步都按这个顺序）
+
+1. **看**：`computer_screenshot` 截屏 → 得到 `{ path, width, height, virtual_offset, scale }`。
+2. **定位窗口**（关键，先做）：目标应用窗口往往**不是全屏**，屏幕其余部分是
+   桌面图标/壁纸，会严重干扰 OCR 与点击。用窗口定位工具拿到目标窗口的
+   **物理像素边界**（Windows 下：DPI 感知的 `GetWindowRect`，见下「定位窗口」），
+   之后的截图/OCR/点击**全部只发生在该窗口矩形内**。
+3. **分析窗口内**：用 picturereader 的 `image_scan` / `image_ocr` 只读窗口区域
+   （先大块扫，再对命中的小块细分），得到目标元素的**虚拟屏坐标**。
+4. **做**：`computer_click` / `computer_type` / `computer_keypress` /
+   `computer_scroll` / `computer_drag` / `computer_move_mouse`，坐标填虚拟屏坐标。
+5. **验**：再 `computer_screenshot`（同一窗口区域），必要时 `image_compare`
+   对比前后，确认达到预期；`image_ocr` 确认文字变化。
+6. 等动画/加载用 `computer_wait`；看当前鼠标位置用 `computer_get_cursor_position`。
+
+---
+
+## 定位窗口（先定位窗口，才能避免背景干扰）
+
+**为什么必须先定位窗口**：桌面图标/壁纸会以文字形式混入 OCR 结果（例如
+「回收站」「此电脑」），让你把桌面上的元素误当成应用里的按钮，越点越偏。
+
+Windows 下标准做法（命令行/PowerShell 均可，纯本地）：
+
+1. 找到目标进程（如 `Get-Process -Name "*Deepseek Harness*"`），确定主窗口句柄。
+2. **必须用 DPI 感知的 `GetWindowRect`** 拿物理像素边界：
+   ```
+   Add-Type 'public class DpiAware { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
+   [DpiAware]::SetProcessDPIAware() | Out-Null
+   GetWindowRect(hwnd) → (left, top, right, bottom)   # 物理像素
+   ```
+   > 注意：**不调用 `SetProcessDPIAware()` 时拿到的 +逻辑坐标+ 是缩放过(如150%)
+   > 的值，与截图/点击的物理像素不一致**，会把窗口定位到错误位置（经验之谈：
+   > 会偏出窗口跑到桌面图标上）。
+3. 把窗口矩形换算成屏幕比例，截图时就只截这个 region：
+   `region: [left/W, top/H, right/W, bottom/H]`。
+4. 之后所有 OCR 的 region 也应落在窗口矩形内。
+
+---
+
+## 窗口内找元素：分块 OCR（文字） + 视觉识别（图标）
+
+- **先大块后细分**：把窗口区域切成几大块(行/列)，逐块 `image_ocr`（用配置里的
+  默认引擎，如 rapid/paddle），找到含目标文字的那块 → 再把那块切成小块继续 OCR
+  → 最后得到目标文字的精确像素框。**一次调用可以多读几块，但不要反复乱点。**
+- **纯图标、无文字的元素**（如齿轮设置按钮）：OCR 读不到，靠 `image_scan` 的
+  色块/结构判断——例如「侧边栏底部有个深色小图标区」，再从色块定位它的中心。
+  「底部有文字项 A、文字项 B」类的上下文也能帮你推断图标行位置。
+- **坐标换算**：截图返回 `virtual_offset:[vx,vy]`。OCR 返回的是**截图内坐标
+  (x,y)**，虚拟屏坐标 = `vx + x`（若截的是窗口 region，vx 就是窗口左上角）。
+  `computer_click` 等工具的 coordinate 一律填**虚拟屏坐标**。
+
+---
+
+## 一击即中：点击纪律
+
+- **确认坐标后再点**：OCR/视觉定位到的文字框，点击用它的**中心点**（不要点
+  边缘；文字框中心未必是按钮可点区，必要时在附近小范围试探一次）。
+- **不要连续多点**：许多 UI（设置页/浮层）是**点击开关**——点一次打开，再点
+  一次又关掉。点一次 → 截图验证 → 按结果决定下一步，绝不盲目连点。
+- **点击后必验证**：每次 `computer_click` 后 `computer_screenshot`（同窗口
+  region）确认是否达到预期；没达到再调整一小步（如 ±10px）。
+
+---
+
+## 运行模式（设置 → 电脑操作）
+
+| 模式 | 行为 |
+|---|---|
+| `disabled` 禁用 | 所有 computer_* 工具一律拒绝 |
+| `readonly` 只读 | 仅 `computer_screenshot` / `computer_get_cursor_position` / `computer_wait` 可用 |
+| `manual` 手动批准 | 有副作用工具需当前会话先 `/computer` 批准（一次批准后续轮次有效） |
+| `auto` 自动 | LLM 自由调用所有工具 |
+
+「手动批准」模式：当工具返回「需要批准：请在对话框输入 /computer」时，告知用户
+输入 `/computer` 解锁当前会话；批准后本会话后续轮次全部可用。
+
+---
+
+## 坐标系与精度
+
+- 坐标 = **相对多屏虚拟屏原点的物理像素**（`computer_screenshot` 的
+  `virtual_offset` 即该原点；capture.ps1 已 `SetProcessDPIAware`，与物理像素一致）。
+- 高分屏缩放：截图/输入都按物理像素，无系统缩放偏移；**窗口定位脚本同样要
+  DPI 感知**才能对齐（见上文经验）。
+- 多显示器：`virtual_offset` 可能是非零（副屏在原点左侧/上方时为负）。
+
+---
 
 ## 安全规范
-- 动手前**务必先截图 + image_ocr 确认目标**，不要盲点盲输。
-- 集中精力只操作任务相关的窗口；不要点击与任务无关的系统/应用（尤其不要操作
-  DSH/EAC 客户端自身窗口，以免干扰会话）。
-- 输入含中文等任意文本都可靠（SendInput Unicode）。需要按住修饰键拖拽时用
-  `computer_drag` 的 `hold_keys`。
-- 每步小操作后 `computer_wait`（例如 300–800ms）让 UI 响应，再接着做。
+
+- 动手前务必**先定位窗口**，再在窗口内 `image_ocr`/`image_scan` 确认目标，不盲点。
+- 只操作任务相关窗口；**不要操作 DSH/EAC 客户端自身的浮层按钮**除非任务就是
+  配置它（如设置卡验证）。
+- 输入含中文等任意文本都可靠（SendInput Unicode）。
+- 每步小操作后 `computer_wait`（300–800ms）等 UI 响应。
+- 破坏性操作（删除/覆盖/保存到重要位置）在「手动批准」模式下让用户先 `/computer`
+  再执行；自动模式下也要先截图确认目标再操作。
