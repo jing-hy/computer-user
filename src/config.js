@@ -29,6 +29,10 @@ export const Config = z.object({
     .number()
     .default(1)
     .description('滚动刻度：一次 scroll 滚动多少格（每格 120 WHEEL delta）'),
+  output_guard: z
+    .boolean()
+    .default(true)
+    .description('LLM 输出过滤器：把工具调用/伪XML写成对话文本时打回并提示，第二次同内容放行'),
   debug: z
     .boolean()
     .default(false)

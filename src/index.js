@@ -21,6 +21,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
 import { runPs, powerShellScript } from './ps.js';
+import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
 export const version = '0.3.0';
@@ -127,6 +128,66 @@ export function apply(ctx, config) {
     });
   } catch (error) {
     ctx.logger?.warn?.(`[computer-user] commands service not available: ${String(error?.message ?? error)}`);
+  }
+
+  // ── LLM output guard: strip fake tool-call text written as conversation ──
+  //     text; first occurrence replaced with a coaching note, second chance
+  //     (same fingerprint) passes through. Off when output_guard=false.
+  try {
+    ctx.inject(['llm'], (sctx) => {
+      const llm = sctx.llm;
+      if (!llm || typeof llm.listProviders !== 'function') return;
+      const wrapProviders = () => {
+        let wrapped = 0;
+        for (const provider of llm.listProviders()) {
+          let reg;
+          try { reg = llm.registration(provider); } catch { continue; }
+          if (!reg || !reg.adapter) continue;
+          if (reg.adapter?.__cuOutputGuard) continue;
+          const orig = reg.adapter;
+          const origStream = orig.stream.bind(orig);
+          const guardProxy = new Proxy(orig, {
+            get(target, prop, receiver) {
+              if (prop === 'stream') {
+                return async function* (options) {
+                  const cfg = getConfig();
+                  if (cfg && cfg.output_guard === false) { yield* origStream(options); return; }
+                  const guard = createOutputGuard({ allowAfter: 2 });
+                  let noteShown = false;
+                  for await (const chunk of origStream(options)) {
+                    if (chunk && chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+                      const decision = guard.sniff(chunk.text);
+                      if (decision.kind === 'reject') {
+                        if (!noteShown) {
+                          noteShown = true;
+                          yield { ...chunk, text: decision.note };
+                        }
+                        continue; // drop the polluted delta
+                      }
+                      // pass / pass-second → forward the original delta
+                    }
+                    yield chunk;
+                  }
+                };
+              }
+              const value = Reflect.get(target, prop, receiver);
+              return typeof value === 'function' ? value.bind(target) : value;
+            },
+          });
+          Object.defineProperty(guardProxy, '__cuOutputGuard', { value: true, enumerable: false, configurable: true });
+          reg.adapter = guardProxy;
+          wrapped++;
+        }
+        if (wrapped > 0) ctx.logger?.info?.(`[computer-user] output guard active on ${wrapped} provider(s)`);
+      };
+      wrapProviders();
+      // re-wrap if providers register later (best-effort; ignore failures)
+      if (typeof llm.on === 'function') {
+        try { llm.on('provider/register', () => { try { wrapProviders(); } catch { /* ignore */ } }); } catch { /* ignore */ }
+      }
+    });
+  } catch (error) {
+    ctx.logger?.warn?.(`[computer-user] output guard unavailable: ${String(error?.message ?? error)}`);
   }
 
   // ── debug helper ──
