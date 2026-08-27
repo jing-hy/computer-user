@@ -3,3 +3,6 @@ node_modules/
 tests/_artifacts/
 .DS_Store
 *.tgz
+.eac-copy-stamp.json
+__pycache__/
+*.pyc
