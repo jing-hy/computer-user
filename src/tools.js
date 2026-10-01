@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
  * `virtual_offset`). All screen-reading/automation is delegated to bundled
  * PowerShell scripts (capture.ps1 / input.ps1) with zero native dependencies.
  *
- * @param {{runPs:(script:string,payload:object,opts?:object)=>Promise<object>, getConfig:()=>object, approvedSessions?:Set<string>, sessionId?:string, setMode?:(mode:string)=>Promise<void>}} deps
+ * @param {{runPs:(script:string,payload:object,opts?:object)=>Promise<object>, getConfig:()=>object, approvedSessions?:Set<string>, sessionId?:string, sessionIds?:string[], setMode?:(mode:string)=>Promise<void>}} deps
  * @returns {Array<object>} tool definitions ready for ctx.tools.register
  */
 
@@ -39,7 +39,7 @@ const MODES = ['disabled', 'readonly', 'manual', 'auto'];
  * Returns void if allowed, or throws with `awaitingApproval=true` if
  * the user needs to approve via /computer first.
  */
-function modeGate(cfg, toolName, approvedSessions, sessionId) {
+function modeGate(cfg, toolName, approvedSessions, sessionIds) {
   const mode = cfg.mode ?? 'manual';
   if (mode === 'disabled') {
     throw new Error('computer-user 已禁用：请在「设置 → 电脑操作」切换模式后再使用');
@@ -48,7 +48,8 @@ function modeGate(cfg, toolName, approvedSessions, sessionId) {
     throw new Error(`computer-user 只读模式：${toolName} 不允许执行，仅截图/读光标/等待可用`);
   }
   if (mode === 'manual' && !READONLY_TOOLS.has(toolName)) {
-    const approved = sessionId && approvedSessions && approvedSessions.has(sessionId);
+    const ids = Array.isArray(sessionIds) ? sessionIds : sessionIds ? [sessionIds] : [];
+    const approved = approvedSessions && ids.some((id) => id && approvedSessions.has(id));
     if (!approved) {
       const e = new Error(
         '需要批准：当前为手动批准模式。请在对话框输入 /computer 批准后重试（批准后本轮及后续轮次均可使用）。'
@@ -91,11 +92,16 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, setMode }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
-  const gate = (toolName) => modeGate(getConfig(), toolName, approvedSessions, sessionId);
+  const approvalIds = Array.isArray(sessionIds)
+    ? sessionIds
+    : sessionId
+      ? [sessionId]
+      : [];
+  const gate = (toolName) => modeGate(getConfig(), toolName, approvedSessions, approvalIds);
 
   // -- computer_screenshot ---------------------------------------------------
   const computerScreenshot = {

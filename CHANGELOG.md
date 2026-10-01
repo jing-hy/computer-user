@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.7 (2026-10-01)
+
+修复 DSH 内核 0.1.3 下「更新后无法启动」([#1](https://github.com/jing-hy/computer-user/issues/1))：
+
+- **启动崩溃**：`@deepseek-ai/dsh-settings` 0.1.3 起只导出
+  `SettingsConflictError` / `SettingsProvider` / `redactSecrets` —— `settingsNamespace`
+  与 `installSettingsSection` 被移除。插件入口原来的
+  `import { settingsNamespace } from '@deepseek-ai/dsh-settings'` 会让整个模块图抛
+  `does not provide an export named 'settingsNamespace'`，插件完全无法加载。
+  现在改走内嵌垫片 `src/settings-compat.js`（`settingsNamespace` = 恒等 + kebab-case
+  校验；`installSettingsSection` = 转发 `provider.installSection`），插件的 ESM 图
+  不再依赖该包的导出，0.1.0-rc.6 ~ 0.1.3-alpha.x 全系可加载。
+- **模式写回**：0.1.3 的 owner scope 只有 `get` / `watch` / `update` / `replace`，
+  `scope.set` 已移除；`computer_set_mode` 改用 `scope.update({ [key]: value })`。
+- **手动批准模式**：授权判定从单个 `sessionId` 改为会话标识集合（`agent.id` +
+  `session.header.sessionId` + `exec.sessionId`），修复部分宿主下 `/computer`
+  批准后工具仍报「需要批准」的问题。
+- **健壮性**：settings 注册失败（服务缺失或内核 API 变更）时降级为静态配置并记
+  warning，不再中断同一 `apply()` 里后续的 `/computer` 命令与输出过滤器接线。
+- **依赖声明**：`peerDependencies` 的 `@deepseek-ai/dsh-settings` 范围补齐 prerelease
+  版本（semver 不会用 `^0.1.0-rc.6` 匹配 `0.1.3-alpha.x`，缺了会被宿主版本门禁
+  判为不兼容而跳过加载）。
+- 新增回归测试 `tests/settings-compat.test.js`（垫片行为、入口不再 import 被移除的
+  导出、0.1.3 scope 写回、settings 失败不中断接线）。
+
 ## 0.1.0 (2026-08-21)
 
 - Initial release: `computer_screenshot` + `computer_click` / `computer_type` /

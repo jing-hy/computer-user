@@ -17,14 +17,15 @@
  * @module computer-user
  */
 
-import { settingsNamespace } from '@deepseek-ai/dsh-settings';
+// 0.1.3：dsh-settings 移除 settingsNamespace 独立导出 —— 改走内嵌兼容垫片。
+import { settingsNamespace } from './settings-compat.js';
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
 import { runPs, powerShellScript } from './ps.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.3.0';
+export const version = '0.3.7';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -79,14 +80,17 @@ export function toggleApproval(approvedSessions, targets) {
 export function apply(ctx, config) {
   // ── register tools ──
   ctx.effect(() => {
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionId: undefined, setMode })) {
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode })) {
       ctx.tools.register({
         ...tool,
-        // Wrap execute to inject the current session ID at call time
+        // Wrap execute to inject every session identity visible at call time.
         async execute(args, exec) {
-          const sid = exec?.agent?.session?.header?.sessionId ?? exec?.sessionId ?? '';
-          // Rebuild gate closure with the real session ID
-          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionId: sid, setMode });
+          const sessionIds = [...new Set([
+            exec?.agent?.id,
+            exec?.agent?.session?.header?.sessionId,
+            exec?.sessionId,
+          ].filter(Boolean).map(String))];
+          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode });
           const realTool = tools.find((t) => t.name === tool.name);
           return realTool.execute(args, exec);
         },
@@ -95,17 +99,29 @@ export function apply(ctx, config) {
   });
 
   // ── settings namespace (hot reload) ──
-  try {
-    ctx.inject(['settings'], (sctx) => {
-      const settingsNs = settingsNamespace(NS);
-      const scope = sctx.settings.register(settingsNs, Config, { base: config });
-      sourceGetter = () => scope.get();
-      sourceSetter = (key, value) => scope.set(key, value);
-      scope.watch(() => { /* trigger hot reload */ });
-    });
-  } catch (error) {
+  // The inject callback runs asynchronously, so a throw inside it is NOT caught
+  // by the surrounding try — it would abort the rest of this callback silently.
+  // Guard it here so an incompatible settings service degrades to the static
+  // config instead of losing the /computer command and the output guard too.
+  const settingsFallback = (error) => {
     ctx.logger?.warn?.(`[computer-user] settings disabled: ${String(error?.message ?? error)}`);
     sourceGetter = () => ({ ...config, mode: config?.mode ?? 'manual' });
+    sourceSetter = null;
+  };
+  try {
+    ctx.inject(['settings'], (sctx) => {
+      try {
+        const settingsNs = settingsNamespace(NS);
+        const scope = sctx.settings.register(settingsNs, Config, { base: config });
+        sourceGetter = () => scope.get();
+        sourceSetter = (key, value) => scope.update({ [key]: value });
+        scope.watch(() => { /* trigger hot reload */ });
+      } catch (error) {
+        settingsFallback(error);
+      }
+    });
+  } catch (error) {
+    settingsFallback(error);
   }
 
   // ── /computer command for session approval ──
