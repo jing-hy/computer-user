@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0 (2026-10-28)
+
+适配 DSH 内核 **0.2.x**（`@deepseek-ai/dsh-settings` 0.2 / `@deepseek-ai/dsh-llm` 0.2）：
+
+- **设置改用插件自身的 Config 表单**：0.2 移除了带命名空间的 settings scope
+  （`settings.register(ns, schema)` → `get/update/watch`），改为按 profile 条目 id
+  的 `SettingsForms`（`describe` / `update` / `mutate`）。插件现在导出
+  `Config`（`src/config.js`），所有字段用 `.volatile()` 声明为可热改；运行时通过
+  `settings.describe()` 读取当前值，`computer_set_mode` 走
+  `settings.update('computer-user', { mode })`。0.1.x 的 scope 路径按能力检测保留。
+- **设置页不再被自动生成页顶掉**：插件自带卡片，`apply()` 里调用
+  `settings.configure({ auto: false }, ctx.fiber)` 关掉自动生成页。
+- **输出过滤器改用 `llm/stream` waterfall**：0.2 的 `LlmRuntime` 不再暴露可变的
+  provider 注册对象（`registration(provider).adapter`），改为在 `ctx.on('llm/stream')`
+  上包一层异步生成器，逐块过滤 `text-delta`；0.1.x 的 provider 代理作为兜底保留。
+- **Web 设置卡片改走 `ctx.configForms`**：`ctx.settingsScope` 在 0.2 已不存在。
+  卡片用 `configForms.get('computer-user')` 取共享 form（`getSnapshot` /
+  `subscribe` / `set` / `unset` / `mutate`，以及 `writable`、`revision`），首次
+  挂载用 `configForms.describe().ensure()` 触发一次 mirror 读取；共享 form 由
+  provider 持有，卸载时只退订不再 `dispose`。
+- **工具注册返回清理函数**：`ctx.tools.register` 的 disposer 现在由 `ctx.effect`
+  统一释放（重载/卸载不再残留工具行）。
+- **依赖声明**：`peerDependencies` 增加 `@deepseek-ai/dsh-settings`
+  `^0.2.1-rc.3 || ^0.2.2-alpha.2`（semver 的 `^0.1.x` 不会匹配 0.2.x，缺了会被宿主
+  版本门禁判为不兼容），`@deepseek-ai/schemastery` 放宽为 `>=3.18.1 <4`
+  （0.2.1-rc.3 用 3.18.5，0.2.2-alpha.2 用 3.18.6-alpha.1）。
+
 ## 0.3.7 (2026-10-01)
 
 修复 DSH 内核 0.1.3 下「更新后无法启动」([#1](https://github.com/jing-hy/computer-user/issues/1))：
