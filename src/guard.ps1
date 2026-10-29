@@ -1,13 +1,12 @@
-# guard.ps1 — always-on-top takeover indicator plus a global stop hotkey.
+# guard.ps1 — always-on-top takeover pill (WPF) plus a global stop hotkey.
 #
-# Runs as its own process so the stop key still works while the input backend is
-# busy (the same reason the head of the ecosystem uses a separate listener).
-# While it runs, a small pill says the agent is driving the machine; pressing the
-# hotkey (default Ctrl+Alt+Esc), clicking the button, or reaching the timeout
-# writes a stop flag that every subsequent computer_* call refuses to ignore.
+# Runs as its own process so the stop key still lands while the input backend is
+# busy. While it runs, a small pill says the agent is driving the machine;
+# pressing the hotkey (default Ctrl+Alt+Esc), clicking Stop, or reaching the
+# timeout writes a stop flag that every subsequent computer_* call honours.
 #
-# Protocol: -Json carries a base64 payload; the script prints one JSON object
-# and exits for the one-shot modes, or stays resident for mode=run.
+# WPF (not WinForms) so the text is ClearType-sharp at any DPI and the pill can
+# use a real rounded corner plus a soft shadow instead of a chroma-keyed region.
 param([string]$Json)
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false; $OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
@@ -57,11 +56,12 @@ try {
     exit 0
   }
 
-  # Resident mode: show the pill and wait for the hotkey.
   $hotkey = 'ctrl+alt+esc'
   if ($payload.hotkey) { $hotkey = [string]$payload.hotkey }
-  $message = 'DSH is controlling your computer. Press {key} to stop.'
-  if ($payload.message) { $message = [string]$payload.message }
+  $title = 'DSH is controlling your computer'
+  if ($payload.message) { $title = [string]$payload.message }
+  $hintTemplate = 'Do not touch the mouse. Press {key} to stop.'
+  if ($payload.hint) { $hintTemplate = [string]$payload.hint }
   $timeoutMs = 0
   if ($payload.timeoutMs) { $timeoutMs = [int]$payload.timeoutMs }
   $stopAfterMs = 0
@@ -69,8 +69,7 @@ try {
 
   $mods = 0
   $vk = 0x1B
-  $parts = $hotkey.ToLower().Split('+')
-  foreach ($part in $parts) {
+  foreach ($part in $hotkey.ToLower().Split('+')) {
     $k = $part.Trim()
     if ($k -eq 'ctrl' -or $k -eq 'control') { $mods = $mods -bor 0x0002 }
     elseif ($k -eq 'alt') { $mods = $mods -bor 0x0001 }
@@ -83,10 +82,9 @@ try {
     else { $vk = 0x1B }
   }
 
-  $script:HotkeyMods = $mods
-  $script:HotkeyVk = $vk
-  Add-Type -AssemblyName System.Windows.Forms | Out-Null
-  Add-Type -AssemblyName System.Drawing | Out-Null
+  Add-Type -AssemblyName PresentationFramework | Out-Null
+  Add-Type -AssemblyName PresentationCore | Out-Null
+  Add-Type -AssemblyName WindowsBase | Out-Null
   $native = @'
 using System;
 using System.Runtime.InteropServices;
@@ -99,72 +97,64 @@ public static class CuGuard {
 '@
   if (-not ('CuGuard' -as [type])) { Add-Type -TypeDefinition $native | Out-Null }
 
-  $form = New-Object System.Windows.Forms.Form
-  $form.Text = 'computer-user takeover'
-  $form.FormBorderStyle = 'None'
-  $form.StartPosition = 'Manual'
-  $form.TopMost = $true
-  $form.ShowInTaskbar = $false
-  $form.Width = 540
-  $form.Height = 54
-  $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-  $form.Left = $screen.Left + [int](($screen.Width - $form.Width) / 2)
-  $form.Top = $screen.Top + 14
-  $form.BackColor = [System.Drawing.Color]::FromArgb(27, 102, 240)
-  $form.Opacity = 0.96
+  $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
+        WindowStartupLocation="Manual" Width="744" Height="112" Opacity="1">
+  <Grid Margin="22,18,22,18">
+  <Border CornerRadius="18" Background="#1B66F0" Padding="20,0">
+    <Border.Effect>
+      <DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.35" Color="#000000"/>
+    </Border.Effect>
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <Border Grid.Column="0" Width="10" Height="10" CornerRadius="5" Background="#E8F0FF"
+              VerticalAlignment="Center" Margin="0,0,16,0"/>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <TextBlock x:Name="TitleText" Foreground="#FFFFFF" FontFamily="Segoe UI" FontSize="16"
+                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="HintText" Foreground="#CFE0FF" FontFamily="Segoe UI" FontSize="12.5"
+                   Margin="0,3,0,0"/>
+      </StackPanel>
+      <Border x:Name="StopButton" Grid.Column="2" Background="#FFFFFF" CornerRadius="16"
+              Padding="20,8" VerticalAlignment="Center" Cursor="Hand">
+        <TextBlock Text="Stop" Foreground="#1B66F0" FontFamily="Segoe UI" FontSize="13.5" FontWeight="SemiBold"/>
+      </Border>
+    </Grid>
+  </Border>
+  </Grid>
+</Window>
+'@
+  $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xaml))
+  $win = [System.Windows.Markup.XamlReader]::Load($reader)
 
-  $radius = 14
-  $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-  $path.AddArc(0, 0, $radius * 2, $radius * 2, 180, 90)
-  $path.AddArc($form.Width - $radius * 2 - 1, 0, $radius * 2, $radius * 2, 270, 90)
-  $path.AddArc($form.Width - $radius * 2 - 1, $form.Height - $radius * 2 - 1, $radius * 2, $radius * 2, 0, 90)
-  $path.AddArc(0, $form.Height - $radius * 2 - 1, $radius * 2, $radius * 2, 90, 90)
-  $path.CloseFigure()
-  $form.Region = New-Object System.Drawing.Region($path)
+  $win.FindName('TitleText').Text = $title
+  $win.FindName('HintText').Text = ($hintTemplate -replace '\{key\}', $hotkey)
 
-  $label = New-Object System.Windows.Forms.Label
-  $label.Text = ($message -replace '\{key\}', $hotkey)
-  $label.ForeColor = [System.Drawing.Color]::White
-  $label.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Regular)
-  $label.TextAlign = 'MiddleLeft'
-  $label.Left = 22
-  $label.Top = 10
-  $label.Width = 430
-  $label.Height = 34
-  $label.BackColor = [System.Drawing.Color]::Transparent
-  $label.Add_Click({ $script:reason = 'button'; $form.Close() })
-
-  $button = New-Object System.Windows.Forms.Label
-  $button.Text = 'Stop'
-  $button.ForeColor = [System.Drawing.Color]::White
-  $button.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-  $button.TextAlign = 'MiddleCenter'
-  $button.Width = 70
-  $button.Height = 28
-  $button.Left = $form.Width - $button.Width - 16
-  $button.Top = 13
-  $button.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 255)
-  $button.ForeColor = [System.Drawing.Color]::FromArgb(27, 102, 240)
-  $btnRadius = 13
-  $btnPath = New-Object System.Drawing.Drawing2D.GraphicsPath
-  $btnPath.AddArc(0, 0, $btnRadius * 2, $btnRadius * 2, 180, 90)
-  $btnPath.AddArc($button.Width - $btnRadius * 2 - 1, 0, $btnRadius * 2, $btnRadius * 2, 270, 90)
-  $btnPath.AddArc($button.Width - $btnRadius * 2 - 1, $button.Height - $btnRadius * 2 - 1, $btnRadius * 2, $btnRadius * 2, 0, 90)
-  $btnPath.AddArc(0, $button.Height - $btnRadius * 2 - 1, $btnRadius * 2, $btnRadius * 2, 90, 90)
-  $btnPath.CloseFigure()
-  $button.Region = New-Object System.Drawing.Region($btnPath)
-  $button.Add_Click({ $script:reason = 'button'; $form.Close() })
-
-  $form.Controls.Add($label)
-  $form.Controls.Add($button)
+  $win.Left = [Math]::Round(([System.Windows.SystemParameters]::PrimaryScreenWidth - $win.Width) / 2)
+  $win.Top = 6
 
   $script:reason = 'timeout'
+  $script:registered = $false
   $script:hotkeyId = 0xC0DE
-  $registered = $false
 
-  $form.Add_Shown({
-    $script:registered = [CuGuard]::RegisterHotKey($form.Handle, $script:hotkeyId, [uint32]$script:HotkeyMods, [uint32]$script:HotkeyVk)
+  $stopClick = {
+    $script:reason = 'button'
+    $win.Close()
+  }
+  $win.FindName('StopButton').Add_MouseLeftButtonUp($stopClick)
+
+  $win.Add_SourceInitialized({
     try {
+      $helper = New-Object System.Windows.Interop.WindowInteropHelper($win)
+      $script:hwnd = $helper.Handle
+      $script:registered = [CuGuard]::RegisterHotKey($script:hwnd, $script:hotkeyId, [uint32]$mods, [uint32]$vk)
       $info = @{
         pid = [int]$PID
         hotkey = $hotkey
@@ -174,26 +164,25 @@ public static class CuGuard {
       ($info | ConvertTo-Json -Compress) | Out-File -FilePath (Join-Path $stateDir 'guard.json') -Encoding utf8
     } catch { }
   })
-  $form.Add_FormClosing({ param($s, $e) })
 
   $started = Get-Date
-  $timer = New-Object System.Windows.Forms.Timer
-  $timer.Interval = 120
+  $timer = New-Object System.Windows.Threading.DispatcherTimer
+  $timer.Interval = [TimeSpan]::FromMilliseconds(120)
   $timer.Add_Tick({
     $msg = New-Object CuGuard+MSG
     while ([CuGuard]::PeekMessage([ref]$msg, [IntPtr]::Zero, 0, 0, 1)) {
-      if ($msg.message -eq 0x0312 -and $msg.wParam -eq $script:hotkeyId) { $script:reason = 'hotkey'; $form.Close() }
+      if ($msg.message -eq 0x0312 -and $msg.wParam -eq $script:hotkeyId) { $script:reason = 'hotkey'; $win.Close() }
     }
     $elapsed = ((Get-Date) - $started).TotalMilliseconds
-    if ($stopAfterMs -gt 0 -and $elapsed -ge $stopAfterMs) { $script:reason = 'self-test'; $form.Close() }
-    if ($timeoutMs -gt 0 -and $elapsed -ge $timeoutMs) { $script:reason = 'timeout'; $form.Close() }
+    if ($stopAfterMs -gt 0 -and $elapsed -ge $stopAfterMs) { $script:reason = 'self-test'; $win.Close() }
+    if ($timeoutMs -gt 0 -and $elapsed -ge $timeoutMs) { $script:reason = 'timeout'; $win.Close() }
   })
   $timer.Start()
 
   ([int]$PID) | Out-File -FilePath $pidFile -Encoding ascii -Force
-  [void]$form.ShowDialog()
+  [void]$win.ShowDialog()
   $timer.Stop()
-  if ($script:registered) { [void][CuGuard]::UnregisterHotKey($form.Handle, $script:hotkeyId) }
+  if ($script:registered -and $script:hwnd) { [void][CuGuard]::UnregisterHotKey($script:hwnd, $script:hotkeyId) }
   Stop-Guard $script:reason
   Out @{ ok = $true; stopped = $true; reason = $script:reason }
   exit 0

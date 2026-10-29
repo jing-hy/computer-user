@@ -1,147 +1,164 @@
+<div align="center">
+
 # computer-user
 
-给 DeepSeek Harness（DSH，含 EAC 桌面客户端）的 **Codex 式电脑操作**插件：读屏幕并操作
-鼠标键盘 —— 截图 → 用 [picturereader] 分析 → click/type/keypress/scroll/drag → 验证。
-**仅支持 Windows。**
+**给 DeepSeek Harness 的 Windows 电脑操控插件（Codex 风格）。**
+模型能看屏幕、点鼠标、敲键盘 —— 也能直接按名字操作 UI Automation 控件。没有 sidecar，不需要编译原生模块。
 
-- `computer_screenshot` 把整个虚拟屏（多显示器、DPI 感知）截成 PNG 文件并返回路径 ——
-  直接喂给 picturereader 的 `image_scan` / `image_ocr`，让任何纯文本模型都能"看"屏幕。
-- 另外 8 个 `computer_*` 工具，通过内置 PowerShell + Win32 `SendInput` 操作鼠标键盘
-  （零原生模块、无需编译，可在 DSH/EAC 宿主进程内运行）。
-- 设置卡（「电脑操作」）顶部是**模式下拉框** —— 禁用 / 只读 / 手动批准（`/computer`）/
-  自动，其余收进默认折叠的 **高级设置**。
-- **全程纯本地、不调用外部 API**：截图（PowerShell）、分析（picturereader 本地
-  scan/OCR）、操作（Win32 SendInput），数据不出本机。操作流程见
-  [skills/computer-use.md](skills/computer-use.md)（先定位目标窗口，再窗口内分块
-  OCR，确认后一击即中并截图验证）。
-- 已验证兼容 **DeepSeek Harness EAC** 桌面端（与 Web 同一 DSH 宿主内核）。
+[![npm](https://img.shields.io/npm/v/computer-user?color=blue)](https://www.npmjs.com/package/computer-user)
+[![downloads](https://img.shields.io/npm/dm/computer-user)](https://www.npmjs.com/package/computer-user)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#兼容性)
+[![tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#开发)
 
-> English: [README.md](README.md)。
+[English](README.md) | 中文
 
-## 视觉：原生优先，picturereader 可选
+<img src="https://raw.githubusercontent.com/jing-hy/computer-user/main/assets/takeover-pill.png" width="780" alt="接管提示条：DSH 正在操控你的电脑，请勿操作鼠标，按 Ctrl+Alt+Esc 停止">
 
-插件不强制任何视觉插件。`computer_screenshot` 返回 PNG 路径 + 前台窗口，之后怎么"看"由模型决定：
+</div>
 
-- **有原生视觉的模型**（现在多数）：截图 → `read_image(path)` 看图 → 操作。不需要额外插件，也不用 OCR。
-- **纯文本模型**：装 [picturereader](https://github.com/jing-hy/picturereader)，对同一张 PNG 跑
-  `image_scan` / `image_ocr`。这条路仍然可用，只是不再是必需。
-- **完全不用视觉**：`computer_snapshot` 返回 UI Automation 控件树和可重放的元素 id，
-  `computer_invoke` / `computer_set_value` / `computer_focus` 直接按控件名操作，不看像素、不动鼠标。
+`computer-user` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的一个 bundle，给 agent 提供
+二十个 `computer_*` 工具：截图、UI Automation 控件树、鼠标键盘输入、窗口控制，以及一个带全局停止热键的接管提示条。
 
-闭环没变（看 → 操作 → 验证）；"看"这一步对有视觉的模型是 `read_image`，对纯文本模型是 `image_ocr`。
-详见 [skills/computer-use.md](skills/computer-use.md)。
+它就是一个普通 DSH 插件：`package.json` + 一份 `cordis.patch.yml` + 设置卡 + 三个 PowerShell 脚本。
+没有原生插件、没有常驻 daemon、不走 MCP 桥。
 
-## 工具
+## 为什么选这个
 
-共 19 个；`tool_mode` 可收敛到 9 个常用工具（见设置卡）。
+- **原生 DSH bundle，不是转接层。** 工具走 `ctx.tools.register`；设置走 0.2.x 的 `SettingsForms` 条目；
+  Web 卡片是一等公民的 settings section，而不是另开一页。
+- **零原生依赖。** 输入用 `SendInput`，截图用 GDI，观测用 UI Automation —— 全部走系统自带的
+  Windows PowerShell 5.1。
+- **视觉可选。** `computer_screenshot` 返回 PNG 路径：有视觉的模型调 `read_image`，纯文本模型用
+  picturereader 的 OCR，而 `computer_snapshot` 完全不看像素、直接按控件名操作。
+- **叫停就停。** agent 接管期间屏幕上方会出现蓝色提示条；按停止热键（默认 `Ctrl+Alt+Esc`）或点按钮
+  会写停止标记，之后任何调用都会明确拒绝，直到用户重新批准。
+- **不会点到旧位置。** 元素 id 每次动作都重新解析，截图还可以用 `expected_window` 做前台窗口围栏 ——
+  界面变了就直接报错。
 
-| 分组 | 工具 |
-|---|---|
-| 看 | `computer_screenshot`（PNG + 前台窗口）、`computer_snapshot`（UIA 控件树 + locator）、`computer_list_windows`、`computer_get_cursor_position` |
-| 指针与键盘 | `computer_click`、`computer_type`、`computer_keypress`、`computer_scroll`、`computer_drag`、`computer_move_mouse` |
-| 控件（不动鼠标） | `computer_invoke`、`computer_set_value`、`computer_focus` |
-| 窗口 | `computer_activate_window`、`computer_move_window`、`computer_close_window` |
-| 等待 | `computer_wait` —— 固定等待，或等到窗口 / 元素 / 标题出现 |
-| 运行时 | `computer_doctor`（自检）、`computer_set_mode` |
+## 快速开始
 
-坐标仍是相对虚拟屏原点的像素（`virtual_offset`）。UIA locator 形如
-`h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`，每次动作都重新解析 —— 界面变了会直接报错，不会点到别处。
-`computer_screenshot` 可传 `expected_window` 做同样的前台窗口围栏。
+npm：
 
-### 急停提示条
-
-任何副作用调用都会在屏幕上方居中弹出蓝色圆角提示条：「DSH 正在操控你的电脑 · 按 Ctrl+Alt+Esc 停止」。
-热键（可配置）或点 Stop 都会写停止标记，之后所有 `computer_*` 拒绝执行，直到重新批准。
-提示条是独立进程，输入后端忙时热键依然有效。
-
-## 安装
-
-```bash
+```sh
 npm install computer-user
 ```
 
-或在 DSH profile 里：
+DSH profile：
 
-```bash
-dsh plugin --profile web add computer-user
+```sh
+dsh plugin --profile desktop add computer-user
 ```
 
-然后重启 DSH（或到 EAC「设置 → 插件 → 管理」启用）。工具对所有会话生效；设置卡在「设置 →
-电脑操作」。
+重启 DSH：工具在所有会话可用，设置卡出现在「设置 → 电脑操作」。
 
-兼容 DSH 0.2.x（`@deepseek-ai/dsh-settings` / `@deepseek-ai/dsh-llm` 0.2）与 0.1.x：
-0.2 的 `configForms` / `SettingsForms` 设置表单与 `llm/stream` 瀑布优先使用，0.1.x 的
-命名空间 settings scope 与 provider 注册保留为兜底。
+从源码：
 
-### 搭配 picturereader（推荐闭环）
+```sh
+git clone https://github.com/jing-hy/computer-user.git
+cd computer-user
+npm install --no-save @deepseek-ai/schemastery@3.18.5   # peer 依赖，运行时由宿主提供
+node --test
+```
+
+## 闭环
 
 ```text
-computer_screenshot → path
-picturereader image_scan / image_ocr <path>   # 看
-computer_click / type / ...                   # 做
-computer_screenshot → image_compare           # 验证
+computer_screenshot            -> PNG 路径 + 前台窗口
+read_image(path)               -> 有视觉的模型直接看图（纯文本用 image_ocr / image_scan）
+computer_snapshot              -> UI Automation 控件树，每个元素一个可重放 id
+computer_invoke / set_value    -> 按名字操作控件，不动鼠标
+computer_screenshot            -> 验证（可传 expected_window 做围栏）
 ```
 
-## 设置卡
+坐标方式同样保留：所有输入工具都收虚拟屏像素，`computer_screenshot` 返回 `virtual_offset`，多屏也对得上。
 
-设置卡（「电脑操作」）采用 DSH settings-panel 设计语言：卡片分组 + 胶囊按钮 + 32px
-输入框 + chevron 下拉 + 折叠箭头；`scope.load()` 兼容无 load 宿主（EAC 桌面壳）。
+## 工具
 
-- **模式下拉框**（卡片顶部）：
-  - `disabled` 禁用 —— 所有 `computer_*` 工具一律拒绝。
-  - `readonly` 只读 —— 仅截图 / 读光标 / 等待可用。
-  - `manual` 手动批准 —— 有副作用工具需先在本会话输入 `/computer` 批准（一次批准，
-    后续轮次持续有效）。
-  - `auto` 自动 —— LLM 自由调用所有工具。
-- **「AI 可自行修改运行模式」开关**（下拉框下方，不在高级设置里）：默认关闭；开启后
-  AI 可用 `computer_set_mode` 切换模式，写入同一设置命名空间，**设置卡下拉框双向同步**。
-- **高级设置**（默认折叠）：截图输出目录、默认缩放、逐字输入间隔、滚动刻度、
-  **代码输出打回（output guard，默认开）**、调试日志。
+二十个工具，三类。`tool_mode` 可以收敛到 9 个常用工具。
 
-**代码输出打回**：host 侧对 LLM 输出流的过滤器——若模型把伪工具调用/伪 XML 当**对话
-文本**输出（比如把 `computer_click({…})`、`<invoke …>` 直接打成了字而不是真正调用），
-该段会被剔除并替换为一句一次性提示；**同一内容第二次原样输出时放行不拦截**。需要故意
-在回复里展示代码片段时可到高级设置关掉。
+| 分组 | 工具 |
+|---|---|
+| 观测 | `computer_screenshot`、`computer_snapshot`、`computer_list_windows`、`computer_get_cursor_position` |
+| 指针与键盘 | `computer_click`、`computer_type`、`computer_keypress`、`computer_scroll`、`computer_drag`、`computer_move_mouse` |
+| 控件操作 | `computer_invoke`、`computer_set_value`、`computer_focus` |
+| 窗口 | `computer_activate_window`、`computer_move_window`、`computer_close_window` |
+| 等待 | `computer_wait` —— 固定等待，或等到窗口 / 元素 / 标题出现 |
+| 运行时 | `computer_doctor`、`computer_browser`（只读 CDP 列表）、`computer_set_mode` |
 
-## 安全
+元素 id 形如 `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`，每次动作都重新解析 —— 旧快照里的 locator 会报错，
+而不是点到挪过去的新控件。
 
-- **先定位目标窗口**（DPI 感知 GetWindowRect，见 skills/computer-use.md）——
-  桌面图标/壁纸会同时干扰 OCR 与点击；只在目标窗口内工作。
-- 动手前务必 `computer_screenshot` 并用 picturereader 分析，不要盲点盲输。
-- 确认坐标后一击即中，点完截图验证，不要盲目连点（很多 UI 是点击开关）。
-- 手动批准模式配合 `/computer` 命令，让人在环。
+## 设置
 
-## 验证与已知限制
+「设置 → 电脑操作」这张卡写的是插件条目的 Config（所有字段都可热改）。
 
-- `node --test` 单测 39/39 通过（工具注册、门禁、参数校验、output guard）。
-- 实机安全窗口冒烟（一次性窗口 + cmd.exe，绝不碰用户应用）：截图 PNG 正确；光标读/移
-  往返精确；`hello 中文 123!` 逐字回读一致；keypress Home/End 导航+插入验证
-  （`HEADzzzTAIL`）；双击选词、单击取消、拖拽选区均通过控件状态断言。
-- headless 集成：`dsh --profile headless` 真实会话中，模型成功调用 `computer_screenshot`
-  与 `computer_get_cursor_position`。
-- headless 真实场景：模型在 `dsh --profile headless` 中自主完成 5 步任务
-  （screenshot → image_scan → type "hello" → screenshot → image_ocr），协调 picturereader
-  与 computer-user 工具，OCR 确认输入文字出现在屏幕上。
-- 滚轮**端到端验证通过**：滚动条位置变化 + MouseWheel 事件触发均正常。注意：鼠标若落在
-  搜狗输入法等置顶悬浮窗上，滚轮事件会被悬浮窗吸收——把光标移到空白处再滚（与任何基于
-  光标的输入同理）。
-- EAC 兼容：与 picturereader 在同一宿主内并存加载；对全部内置插件静态扫描，
-  `computer_*` 工具名 / `computer-user` 命名空间零冲突。
+| 字段 | 默认 | 作用 |
+|---|---|---|
+| `mode` | `manual` | `disabled` 全拒；`readonly` 只允许观测；`manual` 需要 `/computer`；`auto` 自由调用 |
+| `ai_can_change_mode` | `false` | AI 能否通过 `computer_set_mode` 自己改模式 |
+| `screenshot_dir` | 空 | 截图输出目录（空 = 系统临时目录） |
+| `default_scale` | `1` | 截图默认缩放 0.1–1 |
+| `typing_interval_ms` | `0` | 逐字输入间隔 |
+| `scroll_units` | `1` | 每次滚动的格数（每格 120 WHEEL delta） |
+| `output_guard` | `true` | 把伪工具调用/XML 写成对话文本时打回；同内容第二次放行 |
+| `debug` | `false` | 日志里打印 PowerShell 脚本路径 |
+| `tool_mode` | `all` | `all` / `lite` / `custom` |
+| `enabled_tools` | `[]` | `custom` 时的白名单（空 = 全部） |
+| `stop_hotkey` | `ctrl+alt+esc` | 提示条上显示的停止热键；提示条按钮始终有效 |
+| `takeover_minutes` | `30` | 提示条多久后自动收起（并停止）；`0` = 不自动收起 |
+| `takeover_message` | 空 | 提示条标题；`{key}` 会替换成热键 |
+| `cdp_port` | `0` | Chromium `--remote-debugging-port`，供 `computer_browser` 使用（`0` = 关闭） |
+| `approve_observe` | `false` | 开启后，截图 / 控件快照 / 窗口列表在 `manual` 模式下也要 `/computer` |
+
+## 安全模型
+
+- **模式。** `disabled` / `readonly` / `manual` / `auto`；`readonly` 下观测工具仍然可用。
+- **会话批准。** `manual` 下副作用工具拒绝执行，直到用户在该会话输入 `/computer`；再输一次撤销批准。
+- **接管提示条与停止键。** 任何副作用调用都会拉起提示条（屏幕上方居中，蓝色圆角，显示「请勿操作鼠标」）。
+  热键、提示条按钮或超时都会写停止标记；之后所有调用都返回明确的「已急停」错误，直到重新批准。
+  提示条是独立进程，输入后端忙时热键依然有效。
+- **观测也可以要求批准（可选）。** `approve_observe` 把批准要求扩展到截图与控件快照 —— 适合「看一眼屏幕
+  本身也敏感」的场景。默认关闭。
+- **过期拒绝。** locator 每次重新解析；截图可加 `expected_window` 围栏。
+
+## 工作原理
+
+```mermaid
+flowchart LR
+  A[Agent] -->|computer_* tools| B[computer-user host bundle]
+  B -->|capture.ps1| C[PNG + 前台窗口]
+  B -->|input.ps1| D[SendInput 鼠标 / 键盘]
+  B -->|observe.ps1| E[UI Automation 控件树 / locator / 窗口]
+  B -->|guard.ps1| F[接管提示条 + 停止热键]
+  C --> G{看}
+  G -->|有视觉| H[read_image]
+  G -->|纯文本| I[picturereader OCR]
+```
+
+宿主半侧注册工具并读取自己的 Config 条目；浏览器半侧（`client.js`）通过 `ctx.configForms` 和官方设置表单
+的样式词汇渲染设置卡。
+
+## 兼容性
+
+| DSH | 状态 |
+|---|---|
+| 0.2.0-rc.1 … 0.2.2-alpha.2 | 支持；门禁为 `@deepseek-ai/dsh-settings >=0.1.0-rc.6 <0.3.0-0` |
+| 0.1.0-rc.6 … 0.1.7-rc.2 | 支持，走 0.1.x 的命名空间 settings scope |
+| 0.3.0 及以后 | 未验证，门禁不放行 |
+
+Windows 10/11 x64；截图与 UIA 路径在 Windows PowerShell 5.1 上实测。
 
 ## 开发
 
-```text
-src/capture.ps1     DPI 感知多屏截图（System.Drawing）
-src/input.ps1       SendInput 鼠标键盘后端
-src/ps.js           PowerShell 运行器（base64 JSON、超时、取消）
-src/tools.js       9 个 computer_* 工具定义 + enabled/confirm 门禁
-src/config.js       设置命名空间 schema
-src/index.js        插件入口（注册工具 + 设置热载）
-client.js           Web 设置卡（ModuleLoader bundle，中英）
-scripts/           实机冒烟脚本（安全窗口）
-tests/             node:test 单测
+```sh
+node --test                      # 76 项：工具、门禁、提示条、设置卡、入口形状
 ```
+
+布局：`src/index.js`（入口 / 命令 / 输出守卫）、`src/tools.js`（工具面与门禁）、`src/ps.js`（PowerShell 调用 +
+提示条状态）、`src/capture.ps1` / `src/input.ps1` / `src/observe.ps1` / `src/guard.ps1`、`client.js`（设置卡）、
+`tests/`。
 
 ## 许可
 
-MIT
+[MIT](LICENSE)

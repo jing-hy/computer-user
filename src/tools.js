@@ -49,6 +49,16 @@ const LITE_TOOLS = new Set([
 
 const MODES = ['disabled', 'readonly', 'manual', 'auto'];
 
+/** Observation tools that read the desktop (screenshots, UIA trees, window lists). */
+const OBSERVE_TOOLS = new Set([
+  'computer_screenshot',
+  'computer_snapshot',
+  'computer_list_windows',
+  'computer_get_cursor_position',
+  'computer_browser',
+  'computer_doctor',
+]);
+
 /**
  * Mode gate: decide whether a tool call is allowed based on the current mode
  * and the session's approval state.
@@ -64,7 +74,11 @@ function modeGate(cfg, toolName, approvedSessions, sessionIds) {
   if (mode === 'readonly' && !READONLY_TOOLS.has(toolName)) {
     throw new Error(`computer-user 只读模式：${toolName} 不允许执行，仅截图/读光标/等待可用`);
   }
-  if (mode === 'manual' && !READONLY_TOOLS.has(toolName)) {
+  // approve_observe opts the observation tools into the same approval gate:
+  // screenshots and UI trees reveal the screen, so a privacy-sensitive setup can
+  // require /computer before the agent looks at anything.
+  const observeLocked = (cfg.approve_observe === true && OBSERVE_TOOLS.has(toolName));
+  if (mode === 'manual' && (!READONLY_TOOLS.has(toolName) || observeLocked)) {
     const ids = Array.isArray(sessionIds) ? sessionIds : sessionIds ? [sessionIds] : [];
     const approved = approvedSessions && ids.some((id) => id && approvedSessions.has(id));
     if (!approved) {
@@ -132,7 +146,8 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
       try {
         ensureGuard({
           hotkey: cfg.stop_hotkey || 'ctrl+alt+esc',
-          message: cfg.takeover_message || undefined,
+          message: cfg.takeover_message || 'DSH 正在操控你的电脑',
+          hint: '请勿操作鼠标 · 按 {key} 停止',
           timeoutMs: Math.max(60000, Number(cfg.takeover_minutes ?? 30) * 60000),
         });
       } catch { /* the pill is a nicety; never block an action on it */ }

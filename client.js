@@ -119,6 +119,8 @@ window.__ModuleLoader__.load({
       takeoverMessageHint: "留空使用默认文案；{key} 会替换成急停热键。",
       cdpPort: "浏览器调试端口（CDP）",
       cdpPortHint: "填 Chrome/Edge 的 --remote-debugging-port（0=关闭）；computer_browser 用它列标签页。",
+      approveObserve: "截图/观测也需要批准",
+      approveObserveHint: "开启后，手动批准模式下连 computer_screenshot / computer_snapshot / 窗口列表都要先 /computer；默认关闭（观测视为只读）。",
       overridden: "已覆盖",
       reset: "恢复默认",
       save: "保存",
@@ -166,6 +168,8 @@ window.__ModuleLoader__.load({
       takeoverMessageHint: "Empty uses the default; {key} is replaced with the stop hotkey.",
       cdpPort: "Browser debug port (CDP)",
       cdpPortHint: "Chrome/Edge --remote-debugging-port (0 = off); computer_browser lists tabs through it.",
+      approveObserve: "Require approval to observe",
+      approveObserveHint: "When on, even screenshots / UI snapshots / window lists need /computer in manual mode. Off by default (observation counts as read-only).",
       overridden: "Overridden",
       reset: "Reset to default",
       save: "Save",
@@ -191,6 +195,7 @@ window.__ModuleLoader__.load({
       { key: "takeover_minutes", type: "number", labelKey: "takeoverMinutes", hintKey: "takeoverMinutesHint", def: 30 },
       { key: "takeover_message", type: "text", labelKey: "takeoverMessage", hintKey: "takeoverMessageHint", def: "" },
       { key: "cdp_port", type: "number", labelKey: "cdpPort", hintKey: "cdpPortHint", def: 0 },
+      { key: "approve_observe", type: "boolean", labelKey: "approveObserve", hintKey: "approveObserveHint", def: false },
     ];
 
     function hasOwn(obj, key) {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 (2026-10-29)
+
+- **提示条改用 WPF**：ClearType 矢量文字（不再有 WinForms 位图模糊）、真正的圆角与投影、
+  标题 + 副标题两行；提示文案改为「DSH 正在操控你的电脑 / 请勿操作鼠标 · 按 Ctrl+Alt+Esc 停止」。
+- **新增 `approve_observe`**：默认关闭；开启后手动批准模式下连 `computer_screenshot` /
+  `computer_snapshot` / 窗口列表也要先 `/computer`（适合「看一眼屏幕本身也敏感」的场景）。
+- **README 中英双语重写**：徽章、提示条截图、工具/设置表、安全模型、mermaid 架构图、兼容矩阵；
+  `assets/takeover-pill.png` 随包发布，图片用 raw URL 以同时适配 GitHub 与 npm。
+- 测试 76/76。
+
 ## 0.5.1 (2026-10-29)
 
 - **浏览器只读通道**：新增 `computer_browser` —— 配置 `cdp_port` 后通过 loopback 的

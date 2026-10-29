@@ -72,4 +72,8 @@ export const Config = z.object({
     .number()
     .default(0)
     .description('Chromium 调试端口（0=关闭；computer_browser 用它列标签页）')),
+  approve_observe: live(z
+    .boolean()
+    .default(false)
+    .description('观测也要批准：开启后截图/快照/窗口列表在手动批准模式下同样需要 /computer')),
 });

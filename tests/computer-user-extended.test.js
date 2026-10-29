@@ -182,3 +182,14 @@ test('browser lane maps CDP targets when the endpoint answers', async () => {
   assert.equal(res.pages[0].title, 'Example');
   assert.equal(res.pages[0].websocket, 'ws://x');
 });
+
+test('approve_observe makes observation need /computer in manual mode', async () => {
+  const env = makeEnv({ cfg: { mode: 'manual', approve_observe: true } });
+  await assert.rejects(env.byName('computer_screenshot').execute({}, {}), /需要批准/);
+});
+
+test('observation stays open in manual mode by default', async () => {
+  const env = makeEnv({ cfg: { mode: 'manual' } });
+  const res = await env.byName('computer_screenshot').execute({}, {});
+  assert.ok(res && typeof res === 'object');
+});
