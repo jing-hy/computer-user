@@ -12,9 +12,9 @@
  *     screenshot_dir, default_scale, typing_interval_ms, scroll_units, debug.
  *
  * Hand-written ModuleLoader bundle — no build step (same shape as picturereader).
- * scope.load() usage is guarded (`typeof scope.load === "function"`) so the
- * card runs on DSH hosts without a scope load surface (EAC desktop shells) as
- * well as those that have one.
+ * 0.4.0: the settings transport is `ctx.configForms` (DSH 0.2.x shared forms
+ * over the plugin entry id) instead of the removed `ctx.settingsScope`. The
+ * 0.1.x namespaced scope is still accepted when it is the only one present.
  */
 window.__ModuleLoader__.load({
   id: "computer-user",
@@ -72,7 +72,7 @@ window.__ModuleLoader__.load({
     }
 
     var NS = "computer-user";
-    var inject = ["slots", "locale", "settingsScope"];
+    var inject = ["slots", "locale"];
 
     var MODE_OPTS = [
       { value: "disabled", labelKey: "modeDisabled" },
@@ -165,12 +165,21 @@ window.__ModuleLoader__.load({
       var [error, setError] = react.useState(null);
 
       react.useEffect(function () {
-        // 有 load 的宿主先拉一次；无 load 的 EAC 宿主直接走 getSnapshot。
-        if (typeof scope.load === "function") scope.load();
+        // 0.2.x：共享 describe mirror 负责读取，空闲时催一次；0.1.x 走 scope.load()。
+        if (typeof props.reload === "function") {
+          try { Promise.resolve(props.reload()).catch(function () {}); } catch (_e) {}
+        } else if (typeof scope.load === "function") {
+          scope.load();
+        }
         var alive = true;
         var sync = function () { if (alive) setSnapshot(scope.getSnapshot()); };
         var un = typeof scope.subscribe === "function" ? scope.subscribe(sync) : null;
-        return function () { alive = false; if (un) un(); if (scope.dispose) scope.dispose(); };
+        return function () {
+          alive = false;
+          if (un) un();
+          // 共享 form 由 provider 持有，只有 0.1.x 的调用方作用域才自行释放。
+          if (typeof props.reload !== "function" && scope.dispose) scope.dispose();
+        };
       }, [scope]);
       react.useEffect(function () {
         if (ready) setDraft(function (prev) {
@@ -212,8 +221,10 @@ window.__ModuleLoader__.load({
           return o.op === "set" ? scope.set(o.key, o.value) : scope.unset(o.key);
         })).then(function () {
           setBusy(false); setNotice(t("saved"));
-          // 保存后刷新本机 snapshot：优先走宿主 load（若提供），否则直接读。
-          if (typeof scope.load === "function") {
+          // 保存后刷新本机 snapshot：0.2.x 一次共享 mirror 读取，0.1.x 走 scope.load。
+          if (typeof props.reload === "function") {
+            try { Promise.resolve(props.reload()).catch(function () {}); } catch (_e) {}
+          } else if (typeof scope.load === "function") {
             scope.load();
           } else {
             try { setSnapshot(scope.getSnapshot()); } catch (_e) {}
@@ -227,7 +238,12 @@ window.__ModuleLoader__.load({
         Promise.all(FIELDS.map(function (f) { return scope.unset(CFG_KEYS[f.key]); })).then(function () {
           setBusy(false); setNotice(t("saved"));
           setTimeout(function () {
-            if (typeof scope.load === "function") {
+            if (typeof props.reload === "function") {
+              Promise.resolve(props.reload()).then(function () {
+                var refreshed = scope.getSnapshot();
+                if (refreshed.status === "ready" && refreshed.value !== void 0) setDraft(Object.assign({}, valueToDraft(refreshed.value)));
+              }).catch(function () {});
+            } else if (typeof scope.load === "function") {
               scope.load().then(function () {
                 var fresh = scope.getSnapshot();
                 if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
@@ -325,17 +341,37 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "computer-user: dictionaries");
-      var scope = ctx.settingsScope.bind({ namespace: NS });
-      ctx.slots.inject("settings.section", function () {
-        return ctx.slots.register({
-          name: "settings.section",
-          id: "computer-user",
-          order: 50,
-          label: function () { return t("nav"); },
-          locale: NS,
-        }, function (props) {
-          return h(Section, Object.assign({}, props, { scope: scope }));
+
+      var registered = false;
+      function registerCard(scope, reload) {
+        if (registered) return;
+        registered = true;
+        ctx.slots.inject("settings.section", function () {
+          return ctx.slots.register({
+            name: "settings.section",
+            id: "computer-user",
+            order: 50,
+            label: function () { return t("nav"); },
+            locale: NS,
+          }, function (props) {
+            return h(Section, Object.assign({}, props, { scope: scope, reload: reload }));
+          });
         });
+      }
+
+      // DSH 0.2.x: one shared config form per Host plugin entry, fed by the
+      // settings describe mirror. `ensure()` starts the first read if idle.
+      ctx.inject(["configForms"], function (cctx) {
+        var forms = cctx.configForms;
+        var form = forms.get(NS);
+        var mirror = typeof forms.describe === "function" ? forms.describe() : null;
+        registerCard(form, mirror && typeof mirror.ensure === "function"
+          ? function () { return mirror.ensure(); }
+          : null);
+      });
+      // DSH 0.1.x: namespaced settings scope (kept for older hosts).
+      ctx.inject(["settingsScope"], function (cctx) {
+        registerCard(cctx.settingsScope.bind({ namespace: NS }), null);
       });
     }
 

@@ -66,6 +66,10 @@ dsh plugin --profile web add computer-user
 然后重启 DSH（或到 EAC「设置 → 插件 → 管理」启用）。工具对所有会话生效；设置卡在「设置 →
 电脑操作」。
 
+兼容 DSH 0.2.x（`@deepseek-ai/dsh-settings` / `@deepseek-ai/dsh-llm` 0.2）与 0.1.x：
+0.2 的 `configForms` / `SettingsForms` 设置表单与 `llm/stream` 瀑布优先使用，0.1.x 的
+命名空间 settings scope 与 provider 注册保留为兜底。
+
 ### 搭配 picturereader（推荐闭环）
 
 ```text

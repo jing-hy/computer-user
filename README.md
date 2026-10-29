@@ -70,6 +70,11 @@ dsh plugin --profile web add computer-user
 Then restart DSH (or use the EAC settings → Plugins → Manage screen). The tools appear for
 any session; the settings card appears under Settings → Computer Use.
 
+Compatible with DSH 0.2.x (`@deepseek-ai/dsh-settings` / `@deepseek-ai/dsh-llm` 0.2) and
+0.1.x hosts: the 0.2 settings form (`configForms` / `SettingsForms`) and the `llm/stream`
+waterfall are used when present, and the 0.1.x namespaced settings scope and provider
+registration are kept as fallbacks.
+
 ### Pair with picturereader (recommended)
 
 ```text
@@ -83,8 +88,9 @@ computer_screenshot → image_compare           # verify
 
 The settings card (「电脑操作 / Computer Use」) uses the DSH settings-panel design
 language — bordered card groups, capsule buttons, 32px inputs, chevron selects,
-rotating-chevron disclosure — and guards `scope.load()` for hosts without a load
-surface (EAC desktop shells).
+rotating-chevron disclosure. It reads the plugin entry's own Config through
+`ctx.configForms` (DSH 0.2.x shared forms), so it stays in sync with the Host settings
+document and with `computer_set_mode`.
 
 - **Mode dropdown** at the top of the card:
   - `disabled` — every `computer_*` tool refuses.
@@ -94,7 +100,7 @@ surface (EAC desktop shells).
   - `auto` — the LLM freely calls all tools.
 - **AI may change mode itself** checkbox (below the dropdown, not in Advanced):
   off by default; when on, the AI can switch modes via `computer_set_mode` — changes are
-  written to the same settings namespace, so the dropdown stays in sync both ways.
+  written to the same plugin Config entry, so the dropdown stays in sync both ways.
 - **高级设置 / Advanced** (collapsed by default): screenshot output dir, default scale,
   typing interval, scroll units, **Reject code-as-text output (output guard, default on)**,
   debug logging.

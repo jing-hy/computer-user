@@ -10,38 +10,40 @@
  * Pairs with picturereader: screenshot returns a file path that the model
  * feeds to image_scan / image_ocr, then acts on it.
  *
- * Settings (namespace `computer-user`, hot-reloaded via a runtime snapshot):
+ * Settings (DSH 0.2.x: the plugin entry's own Config form, namespace
+ * `computer-user`, every field `.volatile()` so edits apply live):
  *   mode — disabled / readonly / manual / auto
  *   screenshot_dir / default_scale / typing_interval_ms / scroll_units / debug
+ *
+ * 0.4.0: `@deepseek-ai/dsh-settings` 0.2 replaced the namespaced settings
+ * scope (`settings.register(ns, schema)` → `get/update/watch`) with
+ * `SettingsForms` over profile entry ids (`describe`/`update`/`mutate`), and
+ * `@deepseek-ai/dsh-llm` 0.2 replaced mutable provider registrations with the
+ * `llm/stream` waterfall. Both extension points are used here; the 0.1.x
+ * paths stay behind feature detection so one build runs on either host.
  *
  * @module computer-user
  */
 
-// 0.1.3：dsh-settings 移除 settingsNamespace 独立导出 —— 改走内嵌兼容垫片。
-import { settingsNamespace } from './settings-compat.js';
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
 import { runPs, powerShellScript } from './ps.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.3.7';
+export const version = '0.4.0';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
 
+/** The profile entry id this bundle's patch inserts (settings form key). */
+export const ENTRY_ID = NS;
+
+/** Settings schema for this entry: exposes the settings page and validates writes. */
+export { Config };
+
 /** In-memory set of session IDs that have been approved via /computer. */
 const approvedSessions = new Set();
-
-let sourceGetter = null;
-let sourceSetter = null;
-const getConfig = () => (sourceGetter ? sourceGetter() : undefined);
-
-/** Persist the runtime mode (used by computer_set_mode + /computer manual mode). */
-async function setMode(mode) {
-  if (typeof sourceSetter !== 'function') throw new Error('computer-user: 设置服务不可用');
-  await sourceSetter('mode', mode);
-}
 
 /**
  * Resolve the session-target set affected by /computer from a command
@@ -77,45 +79,116 @@ export function toggleApproval(approvedSessions, targets) {
   return { approved: true, targets };
 }
 
-export function apply(ctx, config) {
-  // ── register tools ──
-  ctx.effect(() => {
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode })) {
-      ctx.tools.register({
-        ...tool,
-        // Wrap execute to inject every session identity visible at call time.
-        async execute(args, exec) {
-          const sessionIds = [...new Set([
-            exec?.agent?.id,
-            exec?.agent?.session?.header?.sessionId,
-            exec?.sessionId,
-          ].filter(Boolean).map(String))];
-          const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode });
-          const realTool = tools.find((t) => t.name === tool.name);
-          return realTool.execute(args, exec);
-        },
-      });
+/**
+ * Wrap an assistant stream so fake tool-call text written as conversation is
+ * replaced by a one-time coaching note (the `output_guard` preference).
+ * @param {AsyncIterable<object>} upstream
+ * @param {() => object} getCfg
+ * @returns {AsyncIterable<object>}
+ */
+export async function* guardStream(upstream, getCfg) {
+  const guard = createOutputGuard({ allowAfter: 2 });
+  let noteShown = false;
+  for await (const chunk of upstream) {
+    const cfg = getCfg();
+    if (cfg && cfg.output_guard === false) { yield chunk; continue; }
+    if (chunk && chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+      const decision = guard.sniff(chunk.text);
+      if (decision.kind === 'reject') {
+        if (!noteShown) {
+          noteShown = true;
+          yield { ...chunk, text: decision.note };
+        }
+        continue; // drop the polluted delta
+      }
+      // pass / pass-second → forward the original delta
     }
+    yield chunk;
+  }
+}
+
+export function apply(ctx, config) {
+  /** Live settings reader: 0.2.x SettingsForms, or a 0.1.x scoped settings scope. */
+  const settings = {
+    /** @returns {object|undefined} current Config values. */
+    read() {
+      return undefined;
+    },
+    /** @type {null | ((mode: string) => Promise<void>)} */
+    setMode: null,
+  };
+
+  const baseConfig = config ?? {};
+  const getConfig = () => {
+    let live;
+    try { live = settings.read(); } catch { /* ignore */ }
+    const value = live && typeof live === 'object' ? live : baseConfig;
+    return { ...baseConfig, ...value, mode: value.mode ?? baseConfig.mode ?? 'manual' };
+  };
+
+  // ── register tools ──
+  // One definition rejected by a host schema check must not take the whole
+  // plugin down: log it and keep the remaining tools (and the settings/card
+  // wiring below) alive.
+  ctx.effect(() => {
+    const disposers = [];
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m) })) {
+      try {
+        disposers.push(ctx.tools.register({
+          ...tool,
+          // Wrap execute to inject every session identity visible at call time.
+          async execute(args, exec) {
+            const sessionIds = [...new Set([
+              exec?.agent?.id,
+              exec?.agent?.session?.header?.sessionId,
+              exec?.sessionId,
+            ].filter(Boolean).map(String))];
+            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m) });
+            const realTool = tools.find((t) => t.name === tool.name);
+            return realTool.execute(args, exec);
+          },
+        }));
+      } catch (error) {
+        ctx.logger?.warn?.(`[computer-user] tool ${tool.name} not registered: ${String(error?.message ?? error)}`);
+      }
+    }
+    return () => { for (const dispose of disposers) dispose(); };
   });
 
-  // ── settings namespace (hot reload) ──
+  // ── settings (live Config over the profile entry) ──
   // The inject callback runs asynchronously, so a throw inside it is NOT caught
   // by the surrounding try — it would abort the rest of this callback silently.
   // Guard it here so an incompatible settings service degrades to the static
   // config instead of losing the /computer command and the output guard too.
   const settingsFallback = (error) => {
     ctx.logger?.warn?.(`[computer-user] settings disabled: ${String(error?.message ?? error)}`);
-    sourceGetter = () => ({ ...config, mode: config?.mode ?? 'manual' });
-    sourceSetter = null;
   };
   try {
     ctx.inject(['settings'], (sctx) => {
       try {
-        const settingsNs = settingsNamespace(NS);
-        const scope = sctx.settings.register(settingsNs, Config, { base: config });
-        sourceGetter = () => scope.get();
-        sourceSetter = (key, value) => scope.update({ [key]: value });
-        scope.watch(() => { /* trigger hot reload */ });
+        const service = sctx.settings;
+        if (service && typeof service.describe === 'function' && typeof service.update === 'function') {
+          // DSH 0.2.x: SettingsForms over the profile entry id.
+          settings.read = () => {
+            const row = service.describe().find((r) => r && r.ns === ENTRY_ID);
+            return row?.value;
+          };
+          settings.setMode = async (mode) => { await service.update(ENTRY_ID, { mode }); };
+          // This plugin ships its own settings card, so suppress the generated page.
+          if (typeof service.configure === 'function') {
+            try { service.configure({ auto: false }, ctx.fiber); } catch { /* optional */ }
+          }
+          return;
+        }
+        if (service && typeof service.register === 'function') {
+          // DSH 0.1.x: namespaced settings scope (register/get/update).
+          const scope = service.register(ENTRY_ID, Config, { base: baseConfig });
+          settings.read = () => scope.get();
+          settings.setMode = async (mode) => { await scope.update({ mode }); };
+          if (typeof scope.watch === 'function') scope.watch(() => { /* hot reload */ });
+          return;
+        }
+        settingsFallback(new Error('unsupported settings service'));
       } catch (error) {
         settingsFallback(error);
       }
@@ -149,10 +222,20 @@ export function apply(ctx, config) {
   // ── LLM output guard: strip fake tool-call text written as conversation ──
   //     text; first occurrence replaced with a coaching note, second chance
   //     (same fingerprint) passes through. Off when output_guard=false.
+  //     0.2.x: the `llm/stream` waterfall; 0.1.x: a provider-registration proxy.
   try {
+    if (typeof ctx.on === 'function') {
+      ctx.on('llm/stream', (_options, next) => {
+        const upstream = next();
+        const cfg = getConfig();
+        if (cfg && cfg.output_guard === false) return upstream;
+        return guardStream(upstream, getConfig);
+      });
+    }
     ctx.inject(['llm'], (sctx) => {
       const llm = sctx.llm;
-      if (!llm || typeof llm.listProviders !== 'function') return;
+      // 0.1.x fallback: wrap each registered provider adapter's stream().
+      if (!llm || typeof llm.listProviders !== 'function' || typeof llm.registration !== 'function') return;
       const wrapProviders = () => {
         let wrapped = 0;
         for (const provider of llm.listProviders()) {
@@ -165,25 +248,8 @@ export function apply(ctx, config) {
           const guardProxy = new Proxy(orig, {
             get(target, prop, receiver) {
               if (prop === 'stream') {
-                return async function* (options) {
-                  const cfg = getConfig();
-                  if (cfg && cfg.output_guard === false) { yield* origStream(options); return; }
-                  const guard = createOutputGuard({ allowAfter: 2 });
-                  let noteShown = false;
-                  for await (const chunk of origStream(options)) {
-                    if (chunk && chunk.type === 'text-delta' && typeof chunk.text === 'string') {
-                      const decision = guard.sniff(chunk.text);
-                      if (decision.kind === 'reject') {
-                        if (!noteShown) {
-                          noteShown = true;
-                          yield { ...chunk, text: decision.note };
-                        }
-                        continue; // drop the polluted delta
-                      }
-                      // pass / pass-second → forward the original delta
-                    }
-                    yield chunk;
-                  }
+                return function (options) {
+                  return guardStream(origStream(options), getConfig);
                 };
               }
               const value = Reflect.get(target, prop, receiver);
