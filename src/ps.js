@@ -147,12 +147,28 @@ export function ensureGuard(payload = {}) {
   } catch { /* best effort */ }
   clearStop();
   const b64 = Buffer.from(JSON.stringify(payload ?? {}), 'utf8').toString('base64');
-  const child = spawn(
-    'powershell.exe',
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', powerShellScript('guard.ps1'), '-Json', b64],
-    { windowsHide: true, detached: true, stdio: 'ignore' }
-  );
-  child.unref();
+  const scriptPath = powerShellScript('guard.ps1');
+  try {
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Json', b64],
+      { windowsHide: true, detached: true, stdio: 'ignore' }
+    );
+    child.on('error', (error) => {
+      try {
+        writeFileSync(join(GUARD_DIR, 'guard.spawn.json'), JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(error?.message || error), scriptPath }), 'utf8');
+      } catch { /* best effort */ }
+    });
+    child.unref();
+    try {
+      writeFileSync(join(GUARD_DIR, 'guard.spawn.json'), JSON.stringify({ at: new Date().toISOString(), ok: true, pid: child.pid ?? null, scriptPath }), 'utf8');
+    } catch { /* best effort */ }
+  } catch (error) {
+    try {
+      writeFileSync(join(GUARD_DIR, 'guard.spawn.json'), JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(error?.message || error), scriptPath }), 'utf8');
+    } catch { /* best effort */ }
+    return false;
+  }
   return true;
 }
 

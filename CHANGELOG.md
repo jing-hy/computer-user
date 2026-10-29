@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.5 (2026-10-29)
+
+- **locator 更稳**：元素 id 现在同时带 automation id（`|a=<autoId>`），解析时优先按它匹配。
+  之前只靠 role/name/nth，浅层快照与深层重新遍历之间 nth 会漂移，导致 `computer_focus` 报
+  "target not found"（实测在 Windows 运行框的输入框上复现）。
+- **提示条启动诊断**：`ensureGuard` 把 spawn 结果写到 `%TEMP%\computer-user\guard.spawn.json`
+  （ok / pid / error），用于定位「宿主里调用了却没出现提示条」这类问题。
+- 测试 76/76。
+
 ## 0.5.4 (2026-10-29)
 
 - **插件清单展示对齐官方**：新增 `locale/zh.json` / `locale/en.json`（`meta.title` +

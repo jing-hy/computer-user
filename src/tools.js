@@ -436,7 +436,8 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     .replace('hwnd=', 'h=')
     .replace('|role=', '|r=')
     .replace('|name=', '|n=')
-    .replace('|nth=', '|i=');
+    .replace('|nth=', '|i=')
+    .replace('|auto=', '|a=');
 
   const computerSnapshot = {
     name: 'computer_snapshot',

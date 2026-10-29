@@ -178,12 +178,13 @@ function Collect-Nodes($win, [int]$maxDepth, [int]$maxNodes) {
 
 function New-Locator($handle, $node) {
   $safe = ($node.name -replace '\|', '/')
-  return 'hwnd=' + $handle + '|role=' + $node.role + '|name=' + $safe + '|nth=' + $node.nth
+  $auto = ($node.autoId -replace '\|', '/')
+  return 'hwnd=' + $handle + '|role=' + $node.role + '|name=' + $safe + '|nth=' + $node.nth + '|auto=' + $auto
 }
 
 function Parse-Locator([string]$locator) {
   $map = @{}
-  $alias = @{ h = 'hwnd'; r = 'role'; n = 'name'; i = 'nth' }
+  $alias = @{ h = 'hwnd'; r = 'role'; n = 'name'; i = 'nth'; a = 'auto' }
   foreach ($part in $locator.Split('|')) {
     $kv = $part.Split('=', 2)
     if ($kv.Count -eq 2) {
@@ -205,6 +206,12 @@ function Find-ElementByLocator([string]$locator) {
     if ($n.role -ne $map['role']) { continue }
     $wantName = $map['name']
     if ($wantName -ne $null -and $n.name -ne $wantName) { continue }
+    # An automation id pins the control even when the occurrence index drifts
+    # between a shallow snapshot and a deeper re-walk.
+    if ($map.ContainsKey('auto') -and $map['auto'] -ne '') {
+      if ([string]$n.autoId -ne $map['auto']) { continue }
+      return @{ window = $win; element = $n.element; node = $n }
+    }
     if ($map.ContainsKey('nth') -and ([string]$n.nth) -ne $map['nth']) { continue }
     return @{ window = $win; element = $n.element; node = $n }
   }
