@@ -21,6 +21,11 @@
   提示。0.1.x 的 settingsScope 仍作为回退（逐个 set/unset）。
 - 新增 tests/settings-form-ui.test.js：静态锁定官方表单语言（不再出现卡片/胶囊/details、
   使用官方 token 与 mutate 路径、覆盖徽标与恢复默认按钮存在）。
+- **修复：设置页显示「未由宿主服务」且插件清单不出现**：cordis loader 的 unwrapExports
+  是 `exports.default ?? exports`，而入口原来只在命名导出里提供 Config；
+  `entry.fiber.runtime.Config` 因此为 undefined，`settings.describe()` 按「schema 缺失」
+  跳过该 entry（工具仍注册，因为 apply 挂在 default 上）。现在 default 导出也带 Config，
+  并新增 tests/plugin-entry.test.js 锁定这一形状。
 
 ## 0.4.0 (2026-10-28)
 
