@@ -5,8 +5,11 @@
 # pressing the hotkey (default Ctrl+Alt+Esc), clicking Stop, or reaching the
 # timeout writes a stop flag that every subsequent computer_* call honours.
 #
-# WPF (not WinForms) so the text is ClearType-sharp at any DPI and the pill can
-# use a real rounded corner plus a soft shadow instead of a chroma-keyed region.
+# The pill follows virtual-desktop switches: a normal window belongs to the
+# desktop it was created on, so when the user flips desktops the window rebuilds
+# itself on the current one (public IVirtualDesktopManager check — no
+# undocumented COM). It also re-asserts topmost so another always-on-top window
+# cannot bury it.
 param([string]$Json)
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false; $OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
@@ -66,6 +69,7 @@ try {
   if ($payload.timeoutMs) { $timeoutMs = [int]$payload.timeoutMs }
   $stopAfterMs = 0
   if ($payload.stopAfterMs) { $stopAfterMs = [int]$payload.stopAfterMs }
+  $hintText = ($hintTemplate -replace '\{key\}', $hotkey)
 
   $mods = 0
   $vk = 0x1B
@@ -93,6 +97,38 @@ public static class CuGuard {
   [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
   [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
   [DllImport("user32.dll")] public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+  public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+  public const uint SWP_NOMOVE = 0x0002;
+  public const uint SWP_NOSIZE = 0x0001;
+  public const uint SWP_NOACTIVATE = 0x0010;
+  public static void Raise(IntPtr h) { SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+}
+[ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IVirtualDesktopManager {
+  int IsWindowOnCurrentVirtualDesktop(IntPtr hwnd, out int onCurrentDesktop);
+  int GetWindowDesktopId(IntPtr hwnd, out Guid desktopId);
+  int MoveWindowToDesktop(IntPtr hwnd, ref Guid desktopId);
+}
+[ComImport, Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A")]
+public class VirtualDesktopManagerCoClass { }
+public static class CuDesktop {
+  static IVirtualDesktopManager manager;
+  static IVirtualDesktopManager Manager {
+    get {
+      if (manager == null) manager = (IVirtualDesktopManager)new VirtualDesktopManagerCoClass();
+      return manager;
+    }
+  }
+  public static bool IsOnCurrent(IntPtr hwnd) {
+    try {
+      int ok;
+      manager = Manager;
+      int hr = manager.IsWindowOnCurrentVirtualDesktop(hwnd, out ok);
+      if (hr != 0) return true;
+      return ok != 0;
+    } catch { return true; }
+  }
 }
 '@
   if (-not ('CuGuard' -as [type])) { Add-Type -TypeDefinition $native | Out-Null }
@@ -131,58 +167,88 @@ public static class CuGuard {
   </Grid>
 </Window>
 '@
-  $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xaml))
-  $win = [System.Windows.Markup.XamlReader]::Load($reader)
 
-  $win.FindName('TitleText').Text = $title
-  $win.FindName('HintText').Text = ($hintTemplate -replace '\{key\}', $hotkey)
-
-  $win.Left = [Math]::Round(([System.Windows.SystemParameters]::PrimaryScreenWidth - $win.Width) / 2)
-  $win.Top = 6
+  $makeWindow = {
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xaml))
+    $w = [System.Windows.Markup.XamlReader]::Load($reader)
+    $w.FindName('TitleText').Text = $title
+    $w.FindName('HintText').Text = $hintText
+    $w.Left = [Math]::Round(([System.Windows.SystemParameters]::PrimaryScreenWidth - $w.Width) / 2)
+    $w.Top = 6
+    $script:currentWindow = $w
+    $w.FindName('StopButton').Add_MouseLeftButtonUp({ $script:reason = 'button'; $script:currentWindow.Close() })
+    return $w
+  }
 
   $script:reason = 'timeout'
-  $script:registered = $false
+  $script:desktopSwitch = $false
   $script:hotkeyId = 0xC0DE
+  $script:started = Get-Date
+  $pidFileWritten = $false
 
-  $stopClick = {
-    $script:reason = 'button'
-    $win.Close()
-  }
-  $win.FindName('StopButton').Add_MouseLeftButtonUp($stopClick)
+  while ($true) {
+    $script:desktopSwitch = $false
+    $script:registered = $false
+    $win = & $makeWindow
+    $thisWin = $win
 
-  $win.Add_SourceInitialized({
-    try {
-      $helper = New-Object System.Windows.Interop.WindowInteropHelper($win)
-      $script:hwnd = $helper.Handle
-      $script:registered = [CuGuard]::RegisterHotKey($script:hwnd, $script:hotkeyId, [uint32]$mods, [uint32]$vk)
-      $info = @{
-        pid = [int]$PID
-        hotkey = $hotkey
-        registered = [bool]$script:registered
-        startedAt = (Get-Date).ToString('o')
+    $win.Add_SourceInitialized({
+      try {
+        $helper = New-Object System.Windows.Interop.WindowInteropHelper($thisWin)
+        $script:hwnd = $helper.Handle
+        $script:registered = [CuGuard]::RegisterHotKey($script:hwnd, $script:hotkeyId, [uint32]$mods, [uint32]$vk)
+        $info = @{
+          pid = [int]$PID
+          hotkey = $hotkey
+          registered = [bool]$script:registered
+          startedAt = (Get-Date).ToString('o')
+        }
+        ($info | ConvertTo-Json -Compress) | Out-File -FilePath (Join-Path $stateDir 'guard.json') -Encoding utf8
+      } catch { }
+    })
+
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(150)
+    $tick = 0
+    $timer.Add_Tick({
+      $msg = New-Object CuGuard+MSG
+      while ([CuGuard]::PeekMessage([ref]$msg, [IntPtr]::Zero, 0, 0, 1)) {
+        if ($msg.message -eq 0x0312 -and $msg.wParam -eq $script:hotkeyId) { $script:reason = 'hotkey'; $script:currentWindow.Close() }
       }
-      ($info | ConvertTo-Json -Compress) | Out-File -FilePath (Join-Path $stateDir 'guard.json') -Encoding utf8
-    } catch { }
-  })
+      $script:tick = $script:tick + 1
+      if ($script:hwnd -and ($script:tick % 10) -eq 0) {
+        try {
+          if (-not [CuDesktop]::IsOnCurrent($script:hwnd)) {
+            $script:reason = 'desktop-switch'
+            $script:desktopSwitch = $true
+            $script:currentWindow.Close()
+            return
+          }
+          [CuGuard]::Raise($script:hwnd)
+        } catch { }
+      }
+      $elapsed = ((Get-Date) - $script:started).TotalMilliseconds
+      if ($stopAfterMs -gt 0 -and $elapsed -ge $stopAfterMs) { $script:reason = 'self-test'; $script:currentWindow.Close() }
+      if ($timeoutMs -gt 0 -and $elapsed -ge $timeoutMs) { $script:reason = 'timeout'; $script:currentWindow.Close() }
+    })
+    $timer.Start()
 
-  $started = Get-Date
-  $timer = New-Object System.Windows.Threading.DispatcherTimer
-  $timer.Interval = [TimeSpan]::FromMilliseconds(120)
-  $timer.Add_Tick({
-    $msg = New-Object CuGuard+MSG
-    while ([CuGuard]::PeekMessage([ref]$msg, [IntPtr]::Zero, 0, 0, 1)) {
-      if ($msg.message -eq 0x0312 -and $msg.wParam -eq $script:hotkeyId) { $script:reason = 'hotkey'; $win.Close() }
+    if (-not $pidFileWritten) {
+      ([int]$PID) | Out-File -FilePath $pidFile -Encoding ascii -Force
+      $pidFileWritten = $true
     }
-    $elapsed = ((Get-Date) - $started).TotalMilliseconds
-    if ($stopAfterMs -gt 0 -and $elapsed -ge $stopAfterMs) { $script:reason = 'self-test'; $win.Close() }
-    if ($timeoutMs -gt 0 -and $elapsed -ge $timeoutMs) { $script:reason = 'timeout'; $win.Close() }
-  })
-  $timer.Start()
 
-  ([int]$PID) | Out-File -FilePath $pidFile -Encoding ascii -Force
-  [void]$win.ShowDialog()
-  $timer.Stop()
-  if ($script:registered -and $script:hwnd) { [void][CuGuard]::UnregisterHotKey($script:hwnd, $script:hotkeyId) }
+    [void]$win.ShowDialog()
+    $timer.Stop()
+    if ($script:registered -and $script:hwnd) { [void][CuGuard]::UnregisterHotKey($script:hwnd, $script:hotkeyId) }
+
+    if ($script:desktopSwitch) {
+      Start-Sleep -Milliseconds 120
+      continue
+    }
+    break
+  }
+
   Stop-Guard $script:reason
   Out @{ ok = $true; stopped = $true; reason = $script:reason }
   exit 0

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 (2026-10-29)
+
+- **修复：切换虚拟桌面后提示条消失**。普通窗口只属于创建它的那个桌面，现在每 1.5 秒用公开接口
+  `IVirtualDesktopManager::IsWindowOnCurrentVirtualDesktop` 检查一次；不在当前桌面就把提示条重建到
+  当前桌面（热键随之重新注册），所以切桌面后仍然看得见。
+- **提示条周期性重申 topmost**（`SetWindowPos` + `HWND_TOPMOST`），避免被另一个同级置顶窗口盖住。
+- 明确：**只有副作用调用才拉起提示条**；`computer_screenshot` / `computer_snapshot` /
+  `computer_list_windows` / `computer_get_cursor_position` / `computer_wait` / `computer_doctor` /
+  `computer_browser` 这些只读工具不会弹窗（已有测试覆盖）。
+
 ## 0.5.2 (2026-10-29)
 
 - **提示条改用 WPF**：ClearType 矢量文字（不再有 WinForms 位图模糊）、真正的圆角与投影、
