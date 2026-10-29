@@ -68,4 +68,8 @@ export const Config = z.object({
     .string()
     .default('')
     .description('接管提示条文案（空=默认）')),
+  cdp_port: live(z
+    .number()
+    .default(0)
+    .description('Chromium 调试端口（0=关闭；computer_browser 用它列标签页）')),
 });

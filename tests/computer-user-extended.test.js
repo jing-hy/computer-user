@@ -25,6 +25,7 @@ function makeEnv(opts = {}) {
     setMode: async () => {},
     isStopped: opts.isStopped ?? (() => false),
     ensureGuard: opts.ensureGuard ?? ((payload) => { guards.push(payload); return true; }),
+    fetchJson: opts.fetchJson,
   });
   const byName = (n) => tools.find((x) => x.name === n);
   return { tools, byName, calls, guards, state };
@@ -160,4 +161,24 @@ test('window tools forward the handle and kind', async () => {
   assert.equal(call.payload.kind, 'move');
   assert.equal(call.payload.handle, 123);
   assert.deepEqual(call.payload.rect, { x: 0, y: 0, w: 800, h: 600 });
+});
+
+test('browser lane reports how to enable CDP when the port is unset', async () => {
+  const env = makeEnv();
+  const res = await env.byName('computer_browser').execute({}, {});
+  assert.deepEqual(res.pages, []);
+  assert.match(res.note, /cdp_port/);
+});
+
+test('browser lane maps CDP targets when the endpoint answers', async () => {
+  const env = makeEnv({
+    fetchJson: async (url) => {
+      assert.match(url, /\/json\/list$/);
+      return [{ id: 'A', type: 'page', title: 'Example', url: 'https://example.com', webSocketDebuggerUrl: 'ws://x' }];
+    },
+  });
+  const res = await env.byName('computer_browser').execute({ port: 9222 }, {});
+  assert.equal(res.port, 9222);
+  assert.equal(res.pages[0].title, 'Example');
+  assert.equal(res.pages[0].websocket, 'ws://x');
 });

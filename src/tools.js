@@ -31,6 +31,7 @@ const READONLY_TOOLS = new Set([
   'computer_snapshot',
   'computer_list_windows',
   'computer_doctor',
+  'computer_browser',
 ]);
 
 /** Tools kept when tool_mode=lite (the ones a normal task needs). */
@@ -108,7 +109,7 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop, fetchJson }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
@@ -624,9 +625,60 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     },
   };
 
+  // -- optional browser lane -------------------------------------------------
+  // Read-only CDP probe: when the user starts Chrome/Edge with
+  // --remote-debugging-port and sets cdp_port, the model can see the pages
+  // instead of guessing pixels. Driving them is left to the caller (any CDP
+  // client) so the plugin keeps no long-lived connection.
+  const httpJson = fetchJson ?? (async (url, opts) => {
+    const res = await fetch(url, opts);
+    return res.json();
+  });
+
+  const computerBrowser = {
+    name: 'computer_browser',
+    description: [
+      'List Chromium DevTools targets over the loopback CDP endpoint (set cdp_port in Settings, or pass port).',
+      'Read-only: returns each page id/title/url/websocket so a caller can decide to drive the web UI through CDP instead of pixels.',
+      'Returns an empty list with a note when no port is configured or the endpoint is closed.',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: { port: { type: 'number', description: 'Override the configured cdp_port for this call.' } },
+      required: [],
+    },
+    output: textOut({ required: ['pages'] }),
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      gate('computer_browser');
+      const cfg = getConfig();
+      const port = Number(args?.port ?? cfg.cdp_port ?? 0);
+      if (!Number.isFinite(port) || port <= 0) {
+        return { pages: [], note: 'cdp_port 未配置：在设置里填上 Chrome/Edge 的 --remote-debugging-port 后可用' };
+      }
+      try {
+        const list = await httpJson('http://127.0.0.1:' + Math.trunc(port) + '/json/list', { signal: exec?.signal });
+        const pages = Array.isArray(list) ? list : [];
+        return {
+          port: Math.trunc(port),
+          pages: pages.map((p) => ({
+            id: p.id,
+            type: p.type,
+            title: p.title,
+            url: p.url,
+            websocket: p.webSocketDebuggerUrl,
+          })),
+        };
+      } catch (e) {
+        return { port: Math.trunc(port), pages: [], note: 'CDP 端点不可达：' + String(e?.message || e) };
+      }
+    },
+  };
+
   const tools = [
     computerScreenshot,
     computerSnapshot,
+    computerBrowser,
     computerClick,
     computerInvoke,
     computerSetValue,

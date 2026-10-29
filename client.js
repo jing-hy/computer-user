@@ -117,6 +117,8 @@ window.__ModuleLoader__.load({
       takeoverMinutesHint: "超过这个时长自动结束接管并写停止标记；0 表示不自动收起。",
       takeoverMessage: "提示条文案",
       takeoverMessageHint: "留空使用默认文案；{key} 会替换成急停热键。",
+      cdpPort: "浏览器调试端口（CDP）",
+      cdpPortHint: "填 Chrome/Edge 的 --remote-debugging-port（0=关闭）；computer_browser 用它列标签页。",
       overridden: "已覆盖",
       reset: "恢复默认",
       save: "保存",
@@ -162,6 +164,8 @@ window.__ModuleLoader__.load({
       takeoverMinutesHint: "After this long the takeover ends and writes the stop flag; 0 = never auto-dismiss.",
       takeoverMessage: "Pill caption",
       takeoverMessageHint: "Empty uses the default; {key} is replaced with the stop hotkey.",
+      cdpPort: "Browser debug port (CDP)",
+      cdpPortHint: "Chrome/Edge --remote-debugging-port (0 = off); computer_browser lists tabs through it.",
       overridden: "Overridden",
       reset: "Reset to default",
       save: "Save",
@@ -186,6 +190,7 @@ window.__ModuleLoader__.load({
       { key: "stop_hotkey", type: "text", labelKey: "stopHotkey", hintKey: "stopHotkeyHint", def: "ctrl+alt+esc" },
       { key: "takeover_minutes", type: "number", labelKey: "takeoverMinutes", hintKey: "takeoverMinutesHint", def: 30 },
       { key: "takeover_message", type: "text", labelKey: "takeoverMessage", hintKey: "takeoverMessageHint", def: "" },
+      { key: "cdp_port", type: "number", labelKey: "cdpPort", hintKey: "cdpPortHint", def: 0 },
     ];
 
     function hasOwn(obj, key) {

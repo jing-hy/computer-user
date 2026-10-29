@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 (2026-10-29)
+
+- **浏览器只读通道**：新增 `computer_browser` —— 配置 `cdp_port` 后通过 loopback 的
+  `/json/list` 列出 Chromium 页面（id / title / url / websocket），用于决定走 CDP 还是像素；
+  端口未配置或不可达时返回空列表与说明。只读，不建立长连接。
+- 设置页新增「浏览器调试端口（CDP）」。
+- 测试 74/74。
+
 ## 0.5.0 (2026-10-29)
 
 - **有视觉就能用**：`computer_screenshot` 返回 PNG 路径 + 前台窗口；模型直接
