@@ -1,20 +1,22 @@
 /**
  * computer-user — Web settings card (client half).
  *
- * Registers a 「电脑操作 / Computer Use」 section in the DSH Web settings page,
- * restyled to the settings-panel design language (the same vocabulary the
- * General-section rows and the models page use: 720px section, bordered 12px
- * card groups, capsule buttons h36 r18, 32px inputs, custom-chevron selects,
- * details disclosure with rotating marker). Business logic is unchanged.
+ * Registers a 「电脑操作 / Computer Use」 section in the DSH Web settings page.
+ * Visual language mirrors the official settings form shipped by
+ * @deepseek-ai/dsh-client-ui-primitives (settings-form.css): a flat field list
+ * separated by hairline rules, 13px/500 labels, 34px inputs on layer-3 with an
+ * --dsw-radius-md radius, 12px tertiary hints, a per-field "overridden" badge
+ * plus a text reset, and one filled save button in the footer. No card chrome,
+ * no capsule buttons, no disclosure.
  *
- *   - Top (visible the moment the card opens): mode dropdown (禁用/只读/手动批准/自动).
- *   - Advanced (wrapped in a <details> so it is collapsed by default):
- *     screenshot_dir, default_scale, typing_interval_ms, scroll_units, debug.
+ * Interaction follows the same contract: edits are staged locally and only a
+ * save writes; a failed save keeps the drafts; clearing a field stages an unset
+ * so it re-inherits the composition layer.
  *
  * Hand-written ModuleLoader bundle — no build step (same shape as picturereader).
- * 0.4.0: the settings transport is `ctx.configForms` (DSH 0.2.x shared forms
- * over the plugin entry id) instead of the removed `ctx.settingsScope`. The
- * 0.1.x namespaced scope is still accepted when it is the only one present.
+ * 0.2.x: settings transport is ctx.configForms over the plugin entry id
+ * (mutate / set / unset; snapshot value / base / user / revision).
+ * 0.1.x: the namespaced ctx.settingsScope still works as a fallback.
  */
 window.__ModuleLoader__.load({
   id: "computer-user",
@@ -25,43 +27,35 @@ window.__ModuleLoader__.load({
     var react = require("react");
     var h = react.createElement;
 
-    // ── CSS (settings-panel design language; own prefix) ──────────────────
-    // Token vocabulary mirrored from dsh-client-ui-settings-models / ui-theme:
-    // bordered rowCards (r12, pad 14/16), capsule buttons (h36 r18), inputs
-    // h32 r8 on bg-layer-1, disclosure markers as rotating chevrons.
-    var CSS =
-      ".__cu_section{max-width:720px;display:flex;flex-direction:column;gap:12px;color:var(--dsw-alias-label-primary)}" +
-      ".__cu_intro{margin:0;font-size:14px;line-height:22px;color:var(--dsw-alias-label-tertiary)}" +
-      ".__cu_card{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:12px}" +
-      ".__cu_cardTitle{margin:0;font-size:14px;line-height:22px;font-weight:500;color:var(--dsw-alias-label-primary)}" +
-      ".__cu_subHint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}" +
-      ".__cu_field{display:flex;flex-direction:column;gap:6px}" +
-      ".__cu_label{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}" +
-      ".__cu_hint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}" +
-      ".__cu_input{box-sizing:border-box;width:100%;height:32px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font:inherit;font-size:14px;line-height:22px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}" +
-      ".__cu_input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}" +
-      ".__cu_input::placeholder{color:var(--dsw-alias-label-dimmed)}" +
-      "select.__cu_input{width:auto;min-width:240px;max-width:100%;cursor:pointer;appearance:none;padding-right:32px;background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27 fill=%27none%27%3E%3Cpath d=%27M3 4.5L6 7.5L9 4.5%27 stroke=%27%2381858C%27 stroke-width=%271.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 12px center;background-size:12px 12px}" +
-      ".__cu_check{accent-color:var(--dsw-alias-state-business-primary)}" +
-      ".__cu_actions{display:flex;align-items:center;gap:8px;margin-top:4px}" +
-      ".__cu_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:36px;padding:0 14px;border:none;border-radius:18px;font:inherit;font-size:14px;line-height:22px;cursor:pointer}" +
-      ".__cu_btnPrimary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}" +
-      ".__cu_btnPrimary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}" +
-      ".__cu_btnSecondary{border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-primary)}" +
-      ".__cu_btnSecondary:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}" +
-      ".__cu_btn:disabled{opacity:.4;cursor:default}" +
-      ".__cu_btn:focus-visible,.__cu_input:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}" +
-      ".__cu_status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}" +
-      ".__cu_saved{font-size:12px;line-height:18px;color:var(--dsw-alias-state-success-primary)}" +
-      ".__cu_error{font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}" +
-      ".__cu_advanced{border-top:1px solid var(--dsw-alias-border-l2);padding-top:12px;display:flex;flex-direction:column;gap:12px}" +
-      ".__cu_advancedSummary{display:flex;align-items:center;gap:6px;width:fit-content;padding:2px 4px;margin-left:-4px;border-radius:6px;cursor:pointer;list-style:none;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}" +
-      ".__cu_advancedSummary::-webkit-details-marker{display:none}" +
-      ".__cu_advancedSummary::before{content:'';width:5px;height:5px;border-right:1.5px solid currentcolor;border-bottom:1.5px solid currentcolor;transform:rotate(-45deg) translate(-1px,-1px);transition:transform 120ms ease}" +
-      "details.__cu_advanced[open] > .__cu_advancedSummary::before{transform:rotate(45deg) translate(-1px,-1px)}" +
-      ".__cu_advancedSummary:hover{color:var(--dsw-alias-label-primary)}" +
-      ".__cu_advancedBody{display:flex;flex-direction:column;gap:12px;padding-top:12px}" +
-      ".__cu_unavailable{font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}";
+    var CSS = [
+      ".__cu_form{display:flex;flex-direction:column}",
+      ".__cu_notice{margin:0 0 12px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}",
+      ".__cu_field{display:flex;flex-direction:column;gap:6px;padding:12px 0}",
+      ".__cu_field+.__cu_field{border-top:.5px solid var(--dsw-alias-border-l2)}",
+      ".__cu_head{display:flex;align-items:center;gap:8px}",
+      ".__cu_label{flex:1;min-width:0;font-size:13px;font-weight:500;line-height:1.5;color:var(--dsw-alias-label-primary)}",
+      ".__cu_badges{display:inline-flex;align-items:center;gap:8px}",
+      ".__cu_badge{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}",
+      ".__cu_reset{border:none;background:none;padding:0;font:inherit;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary);cursor:pointer}",
+      ".__cu_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}",
+      ".__cu_reset:disabled{cursor:default}",
+      ".__cu_input{box-sizing:border-box;width:100%;height:34px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-3);font:inherit;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary)}",
+      ".__cu_input::placeholder{color:var(--dsw-alias-label-tertiary)}",
+      ".__cu_input:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary)}",
+      ".__cu_input:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}",
+      ".__cu_input[aria-invalid=true]{border-color:var(--dsw-alias-state-error-primary)}",
+      "select.__cu_input{appearance:none;padding-right:34px;cursor:pointer;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-repeat:no-repeat;background-position:right 12px center;background-size:12px 12px}",
+      "select.__cu_input:disabled{cursor:default}",
+      ".__cu_check{flex:none;width:16px;height:16px;margin:0;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}",
+      ".__cu_check:disabled{cursor:default}",
+      ".__cu_hint{margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}",
+      ".__cu_invalid{margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-state-error-primary)}",
+      ".__cu_footer{display:flex;align-items:center;gap:8px;padding-top:16px}",
+      ".__cu_failed{flex:1;min-width:0;margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-error)}",
+      ".__cu_save{appearance:none;border:1px solid transparent;border-radius:var(--dsw-radius-md);padding:5px 14px;font:inherit;font-size:13px;line-height:1.5;cursor:pointer;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}",
+      ".__cu_save:disabled{opacity:.4;cursor:default}",
+      ".__cu_save:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:1px}",
+    ].join("");
     var tagId = "computer-user/main.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -83,7 +77,7 @@ window.__ModuleLoader__.load({
 
     var zh = {
       nav: "电脑操作",
-      intro: "computer-user：让 DSH 读屏幕并操作鼠标键盘（Codex computer-use 风格）。选择运行模式后，截图结果配合 picturereader 的 image_scan/image_ocr 使用。",
+      intro: "让 DSH 读屏幕并操作鼠标键盘（Codex computer-use 风格）。截图结果配合 picturereader 的 image_scan / image_ocr 使用。",
       mode: "运行模式",
       modeDisabled: "禁用",
       modeReadonly: "只读",
@@ -92,25 +86,30 @@ window.__ModuleLoader__.load({
       modeHint: "禁用=全部拒绝 | 只读=仅截图/读光标/等待 | 手动批准=需 /computer 命令批准后可用 | 自动=LLM自由调用所有工具",
       aiCanChangeMode: "AI 可自行修改运行模式",
       aiCanChangeModeHint: "开启后 AI 可通过 computer_set_mode 工具自行切换模式（默认关闭）。AI 修改会同步更新本下拉框。",
-      advanced: "高级设置",
-      screenshotDir: "截图输出目录（空 = 系统临时目录）",
-      defaultScale: "截图默认缩放 0.1..1",
+      screenshotDir: "截图输出目录",
+      screenshotDirHint: "留空表示使用系统临时目录。",
+      defaultScale: "截图默认缩放",
+      defaultScaleHint: "0.1..1；1 表示原分辨率整屏。",
       typingIntervalMs: "逐字输入间隔（毫秒）",
-      scrollUnits: "滚动刻度（每格 120）",
+      typingIntervalMsHint: "越大越稳但越慢；0 表示不等待。",
+      scrollUnits: "滚动刻度",
+      scrollUnitsHint: "一次 scroll 滚动多少格，每格 120 WHEEL delta。",
       outputGuard: "代码输出打回",
       outputGuardHint: "把工具调用/伪 XML 写成对话文本时打回并提示；同内容第二次放行。关闭则不拦截。",
       debug: "调试日志",
-      save: "保存",
+      debugHint: "在日志里打印 PowerShell 脚本路径，仅排查时开启。",
+      overridden: "已覆盖",
       reset: "恢复默认",
-      saved: "已保存",
+      save: "保存",
       saving: "保存中…",
-      error: "保存失败",
-      unavailable: "设置命名空间不可用（服务端未注册 computer-user 命名空间？）",
-      loading: "加载中…",
+      saveFailed: "保存没有生效，草稿已保留，请修改后重试。",
+      readOnly: "本部署的设置为只读。",
+      unavailable: "computer-user 未由宿主服务，暂时无法配置。",
+      invalidNumber: "请填数字，或留空使用默认值。",
     };
     var en = {
       nav: "Computer Use",
-      intro: "computer-user: let DSH read the screen and drive mouse & keyboard (Codex computer-use style). Pick a mode; screenshots pair with picturereader's image_scan/image_ocr.",
+      intro: "Let DSH read the screen and drive mouse & keyboard (Codex computer-use style). Screenshots pair with picturereader's image_scan / image_ocr.",
       mode: "Mode",
       modeDisabled: "Disabled",
       modeReadonly: "Read-only",
@@ -119,53 +118,65 @@ window.__ModuleLoader__.load({
       modeHint: "Disabled=refuse all | Read-only=screenshot/cursor/wait only | Manual approval=need /computer command to unlock | Automatic=LLM freely calls all tools",
       aiCanChangeMode: "AI may change mode itself",
       aiCanChangeModeHint: "When on, the AI can switch modes via the computer_set_mode tool (default off). AI changes are reflected in this dropdown.",
-      advanced: "Advanced",
-      screenshotDir: "Screenshot output dir (empty = OS temp)",
-      defaultScale: "Screenshot default scale 0.1..1",
+      screenshotDir: "Screenshot output dir",
+      screenshotDirHint: "Leave empty to use the OS temp directory.",
+      defaultScale: "Screenshot default scale",
+      defaultScaleHint: "0.1..1; 1 keeps the full-resolution screen.",
       typingIntervalMs: "Typing interval (ms)",
-      scrollUnits: "Scroll units (120 per tick)",
+      typingIntervalMsHint: "Larger is steadier but slower; 0 means no wait.",
+      scrollUnits: "Scroll units",
+      scrollUnitsHint: "Wheel grid per scroll, 120 WHEEL delta each.",
       outputGuard: "Reject code-as-text output",
-      outputGuardHint: "Rejects tool-call/XML written as conversation text; the same text passes on second output. Off disables.",
+      outputGuardHint: "Rejects tool-call/XML written as conversation text; the same text passes on the second output. Off disables.",
       debug: "Debug logging",
+      debugHint: "Logs the PowerShell script paths; enable only while diagnosing.",
+      overridden: "Overridden",
+      reset: "Reset to default",
       save: "Save",
-      reset: "Reset",
-      saved: "Saved",
       saving: "Saving…",
-      error: "Save failed",
-      unavailable: "Settings namespace unavailable (computer-user not registered server-side?)",
-      loading: "Loading…",
+      saveFailed: "The deployment did not accept these values; your drafts were kept.",
+      readOnly: "This deployment stores settings read-only.",
+      unavailable: "computer-user is not served by the host, so it cannot be configured right now.",
+      invalidNumber: "Enter a number, or leave blank to use the default.",
     };
 
-    // Top (always visible) vs advanced (collapsed by default).
     var FIELDS = [
-      { key: "mode", type: "mode", labelKey: "mode", hintKey: "modeHint" },
-      { key: "ai_can_change_mode", type: "checkbox", labelKey: "aiCanChangeMode", hintKey: "aiCanChangeModeHint" },
-      { key: "screenshot_dir", type: "text", labelKey: "screenshotDir", advanced: true },
-      { key: "default_scale", type: "number", labelKey: "defaultScale", advanced: true },
-      { key: "typing_interval_ms", type: "number", labelKey: "typingIntervalMs", advanced: true },
-      { key: "scroll_units", type: "number", labelKey: "scrollUnits", advanced: true },
-      { key: "output_guard", type: "checkbox", labelKey: "outputGuard", hintKey: "outputGuardHint", advanced: true },
-      { key: "debug", type: "checkbox", labelKey: "debug", advanced: true },
+      { key: "mode", type: "mode", labelKey: "mode", hintKey: "modeHint", def: "manual" },
+      { key: "ai_can_change_mode", type: "boolean", labelKey: "aiCanChangeMode", hintKey: "aiCanChangeModeHint", def: false },
+      { key: "screenshot_dir", type: "text", labelKey: "screenshotDir", hintKey: "screenshotDirHint", def: "" },
+      { key: "default_scale", type: "number", labelKey: "defaultScale", hintKey: "defaultScaleHint", def: 1 },
+      { key: "typing_interval_ms", type: "number", labelKey: "typingIntervalMs", hintKey: "typingIntervalMsHint", def: 0 },
+      { key: "scroll_units", type: "number", labelKey: "scrollUnits", hintKey: "scrollUnitsHint", def: 1 },
+      { key: "output_guard", type: "boolean", labelKey: "outputGuard", hintKey: "outputGuardHint", def: true },
+      { key: "debug", type: "boolean", labelKey: "debug", hintKey: "debugHint", def: false },
     ];
-    var CFG_KEYS = {
-      mode: "mode", ai_can_change_mode: "ai_can_change_mode",
-      screenshot_dir: "screenshot_dir", default_scale: "default_scale",
-      typing_interval_ms: "typing_interval_ms", scroll_units: "scroll_units",
-      output_guard: "output_guard", debug: "debug",
-    };
+
+    function hasOwn(obj, key) {
+      return obj !== null && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key);
+    }
+
+    function draftWrite(f, text) {
+      if (f.type === "boolean") return { op: "set", value: !!text };
+      if (f.type === "number") {
+        var trimmed = String(text).trim();
+        if (trimmed === "") return { op: "unset" };
+        var num = Number(trimmed);
+        return Number.isFinite(num) ? { op: "set", value: num } : null;
+      }
+      if (f.type === "mode") return { op: "set", value: String(text) };
+      var str = String(text).trim();
+      return str === "" ? { op: "unset" } : { op: "set", value: str };
+    }
 
     function Section(props) {
       var t = props.t;
       var scope = props.scope;
       var [snapshot, setSnapshot] = react.useState(function () { return scope.getSnapshot(); });
-      var ready = snapshot.status === "ready" && snapshot.value !== void 0;
-      var [draft, setDraft] = react.useState({});
-      var [busy, setBusy] = react.useState(false);
-      var [notice, setNotice] = react.useState(null);
-      var [error, setError] = react.useState(null);
+      var [drafts, setDrafts] = react.useState({});
+      var [saving, setSaving] = react.useState(false);
+      var [failed, setFailed] = react.useState(false);
 
       react.useEffect(function () {
-        // 0.2.x：共享 describe mirror 负责读取，空闲时催一次；0.1.x 走 scope.load()。
         if (typeof props.reload === "function") {
           try { Promise.resolve(props.reload()).catch(function () {}); } catch (_e) {}
         } else if (typeof scope.load === "function") {
@@ -177,165 +188,200 @@ window.__ModuleLoader__.load({
         return function () {
           alive = false;
           if (un) un();
-          // 共享 form 由 provider 持有，只有 0.1.x 的调用方作用域才自行释放。
           if (typeof props.reload !== "function" && scope.dispose) scope.dispose();
         };
       }, [scope]);
-      react.useEffect(function () {
-        if (ready) setDraft(function (prev) {
-          var merged = Object.assign({}, valueToDraft(snapshot.value));
-          for (var k in prev) merged[k] = prev[k];
-          return merged;
-        });
-      }, [ready]);
 
       if (snapshot.status === "unavailable") {
-        return h("p", { className: "__cu_unavailable" }, t("unavailable"));
+        return h("p", { className: "__cu_notice" }, t("unavailable"));
       }
-      if (!ready) return h("p", { className: "__cu_status" }, t("loading"));
+      if (snapshot.status !== "ready") return h("p", { className: "__cu_notice" }, "");
+      var value = snapshot.value && typeof snapshot.value === "object" ? snapshot.value : {};
+      var user = snapshot.user && typeof snapshot.user === "object" ? snapshot.user : {};
+      var readOnly = snapshot.writable === false;
+      var disabled = readOnly || saving;
 
-      var value = snapshot.value;
+      function effective(f) {
+        var v = value[f.key];
+        return v === undefined ? f.def : v;
+      }
+      function stateOf(f) {
+        var d = hasOwn(drafts, f.key) ? drafts[f.key] : null;
+        var overridden = hasOwn(user, f.key);
+        var cleared = !!(d && d.op === "unset");
+        if (f.type === "boolean") {
+          var checked = d ? (d.op === "set" ? !!d.value : !!f.def) : !!effective(f);
+          return { checked: checked, text: "", overridden: overridden, cleared: cleared };
+        }
+        if (f.type === "number") {
+          if (d) {
+            if (d.op === "unset") return { checked: false, text: "", overridden: overridden, cleared: true };
+            if (d.op === "invalid") return { checked: false, text: String(d.text), overridden: overridden, cleared: false };
+            return { checked: false, text: String(d.value), overridden: overridden, cleared: false };
+          }
+          return { checked: false, text: String(effective(f) ?? ""), overridden: overridden, cleared: false };
+        }
+        var text = d ? (d.op === "set" ? String(d.value) : "") : String(effective(f) ?? "");
+        return { checked: false, text: text, overridden: overridden, cleared: cleared };
+      }
+      function isValid(f) {
+        if (f.type !== "number") return true;
+        if (!hasOwn(drafts, f.key)) return true;
+        var d = drafts[f.key];
+        if (d.op === "unset") return true;
+        if (d.op === "invalid") return false;
+        return String(d.value).trim() !== "" && Number.isFinite(Number(d.value));
+      }
+      function stageText(f, text) {
+        var write = draftWrite(f, text);
+        setDrafts(function (prev) {
+          var next = Object.assign({}, prev);
+          if (write === null) next[f.key] = { op: "invalid", text: text };
+          else if (write.op === "unset") next[f.key] = { op: "unset" };
+          else next[f.key] = { op: "set", value: write.value };
+          return next;
+        });
+        setFailed(false);
+      }
+      function stageChecked(f, checked) {
+        setDrafts(function (prev) {
+          var next = Object.assign({}, prev);
+          next[f.key] = { op: "set", value: !!checked };
+          return next;
+        });
+        setFailed(false);
+      }
+      function resetField(f) {
+        setDrafts(function (prev) {
+          var next = Object.assign({}, prev);
+          next[f.key] = { op: "unset" };
+          return next;
+        });
+        setFailed(false);
+      }
+
+      var ops = [];
+      var invalid = false;
+      FIELDS.forEach(function (f) {
+        var d = hasOwn(drafts, f.key) ? drafts[f.key] : null;
+        if (!d) return;
+        if (!isValid(f)) { invalid = true; return; }
+        if (d.op === "unset") { ops.push({ op: "unset", path: [f.key] }); return; }
+        if (d.op === "set") ops.push({ op: "set", path: [f.key], value: d.value });
+      });
+      var dirty = ops.length > 0 || invalid;
 
       function onSave() {
-        setBusy(true); setNotice(null); setError(null);
-        var ops = [];
-        FIELDS.forEach(function (f) {
-          if (f.type === "checkbox") {
-            ops.push({ op: "set", key: CFG_KEYS[f.key], value: draft[f.key] !== void 0 ? !!draft[f.key] : Boolean(value[CFG_KEYS[f.key]]) });
-            return;
-          }
-          if (f.type === "mode") {
-            ops.push({ op: "set", key: CFG_KEYS[f.key], value: draft[f.key] || value[CFG_KEYS[f.key]] || "manual" });
-            return;
-          }
-          var dv = draft[f.key] !== void 0 ? String(draft[f.key]) : String(value[CFG_KEYS[f.key]] ?? "");
-          if (f.type === "number") {
-            var num = Number(dv);
-            if (Number.isFinite(num)) { ops.push({ op: "set", key: CFG_KEYS[f.key], value: num }); }
-            return;
-          }
-          if (String(dv).trim() === "") { ops.push({ op: "unset", key: CFG_KEYS[f.key] }); return; }
-          ops.push({ op: "set", key: CFG_KEYS[f.key], value: String(dv).trim() });
-        });
-        Promise.all(ops.map(function (o) {
-          return o.op === "set" ? scope.set(o.key, o.value) : scope.unset(o.key);
-        })).then(function () {
-          setBusy(false); setNotice(t("saved"));
-          // 保存后刷新本机 snapshot：0.2.x 一次共享 mirror 读取，0.1.x 走 scope.load。
+        if (!dirty || invalid) return;
+        setSaving(true);
+        setFailed(false);
+        var pending;
+        if (typeof scope.mutate === "function") {
+          pending = Promise.resolve(scope.mutate(ops, snapshot.revision));
+        } else {
+          pending = Promise.all(ops.map(function (op) {
+            return op.op === "unset" ? scope.unset(op.path[0]) : scope.set(op.path[0], op.value);
+          })).then(function () { return true; });
+        }
+        pending.then(function (accepted) {
+          setSaving(false);
+          if (accepted === false) { setFailed(true); return; }
+          setDrafts({});
           if (typeof props.reload === "function") {
             try { Promise.resolve(props.reload()).catch(function () {}); } catch (_e) {}
           } else if (typeof scope.load === "function") {
             scope.load();
-          } else {
-            try { setSnapshot(scope.getSnapshot()); } catch (_e) {}
           }
-        }).catch(function (e) {
-          setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
+        }).catch(function () {
+          setSaving(false);
+          setFailed(true);
         });
       }
-      function onReset() {
-        setBusy(true);
-        Promise.all(FIELDS.map(function (f) { return scope.unset(CFG_KEYS[f.key]); })).then(function () {
-          setBusy(false); setNotice(t("saved"));
-          setTimeout(function () {
-            if (typeof props.reload === "function") {
-              Promise.resolve(props.reload()).then(function () {
-                var refreshed = scope.getSnapshot();
-                if (refreshed.status === "ready" && refreshed.value !== void 0) setDraft(Object.assign({}, valueToDraft(refreshed.value)));
-              }).catch(function () {});
-            } else if (typeof scope.load === "function") {
-              scope.load().then(function () {
-                var fresh = scope.getSnapshot();
-                if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
-              }).catch(function () {});
-            } else {
-              var fresh = scope.getSnapshot();
-              if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
-            }
-          }, 120);
-        }).catch(function (e) { setBusy(false); setError(t("error") + ": " + String(e && e.message || e)); });
-      }
 
-      function fieldDraft(f) {
-        if (f.type === "checkbox") return draft[f.key] !== void 0 ? !!draft[f.key] : Boolean(value[CFG_KEYS[f.key]]);
-        return draft[f.key] !== void 0 ? draft[f.key] : String(value[CFG_KEYS[f.key]] ?? "");
-      }
-      function setField(f, v) {
-        setDraft(function (prev) { var n = Object.assign({}, prev); n[f.key] = v; return n; });
-        setNotice(null); setError(null);
-      }
       function renderField(f) {
-        if (f.type === "mode") {
-          return h("label", { key: f.key, className: "__cu_field" },
-            h("span", { className: "__cu_label" }, t("mode")),
-            h("select", {
-              className: "__cu_input",
-              value: fieldDraft(f) || "manual",
-              onChange: function (e) { setField(f, e.target.value); },
-            }, MODE_OPTS.map(function (o) {
-              return h("option", { key: o.value, value: o.value }, t(o.labelKey));
-            })),
-            h("p", { className: "__cu_hint" }, t("modeHint"))
-          );
-        }
-        if (f.type === "checkbox") {
-          var checked = draft[f.key] !== void 0 ? !!draft[f.key] : Boolean(value[CFG_KEYS[f.key]]);
-          return h("label", { key: f.key, className: "__cu_field" },
-            h("span", { className: "__cu_label" },
-              h("input", { className: "__cu_check", type: "checkbox", checked: checked, onChange: function (e) { setField(f, e.target.checked); } }),
-              h("span", null, t(f.labelKey))
+        var id = "computer-use-" + f.key;
+        var state = stateOf(f);
+        var showInvalid = !isValid(f);
+        var badges = h("span", { className: "__cu_badges" },
+          state.overridden ? h("span", { className: "__cu_badge" }, t("overridden")) : null,
+          (state.overridden || state.cleared || hasOwn(drafts, f.key))
+            ? h("button", {
+                type: "button",
+                className: "__cu_reset",
+                disabled: disabled,
+                onClick: function () { resetField(f); },
+              }, t("reset"))
+            : null
+        );
+        var hint = showInvalid
+          ? h("p", { className: "__cu_invalid" }, t("invalidNumber"))
+          : (f.hintKey ? h("p", { className: "__cu_hint" }, t(f.hintKey)) : null);
+
+        if (f.type === "boolean") {
+          return h("div", { key: f.key, className: "__cu_field" },
+            h("div", { className: "__cu_head" },
+              h("label", { htmlFor: id, className: "__cu_label" }, t(f.labelKey)),
+              badges,
+              h("input", {
+                id: id,
+                className: "__cu_check",
+                type: "checkbox",
+                checked: state.checked,
+                disabled: disabled,
+                onChange: function (e) { stageChecked(f, e.target.checked); },
+              })
             ),
-            f.hintKey ? h("p", { className: "__cu_hint" }, t(f.hintKey)) : null
+            hint
           );
         }
-        return h("label", { key: f.key, className: "__cu_field" },
-          h("span", { className: "__cu_label" }, t(f.labelKey)),
-          h("input", {
+        var control;
+        if (f.type === "mode") {
+          control = h("select", {
+            id: id,
+            className: "__cu_input",
+            value: state.text || f.def,
+            disabled: disabled,
+            onChange: function (e) { stageText(f, e.target.value); },
+          }, MODE_OPTS.map(function (o) {
+            return h("option", { key: o.value, value: o.value }, t(o.labelKey));
+          }));
+        } else {
+          control = h("input", {
+            id: id,
             className: "__cu_input",
             type: f.type === "number" ? "number" : "text",
-            value: fieldDraft(f),
-            onChange: function (e) { setField(f, e.target.value); },
-          })
+            step: f.type === "number" ? "any" : undefined,
+            value: state.text,
+            placeholder: f.def === "" ? undefined : String(f.def),
+            "aria-invalid": showInvalid ? "true" : undefined,
+            disabled: disabled,
+            onChange: function (e) { stageText(f, e.target.value); },
+          });
+        }
+        return h("div", { key: f.key, className: "__cu_field" },
+          h("div", { className: "__cu_head" },
+            h("label", { htmlFor: id, className: "__cu_label" }, t(f.labelKey)),
+            badges
+          ),
+          control,
+          hint
         );
       }
 
-      // Top fields are always rendered first, then the collapsed Advanced <details>.
-      var top = FIELDS.filter(function (f) { return !f.advanced; });
-      var advanced = FIELDS.filter(function (f) { return f.advanced; });
-      return h("div", { className: "__cu_section" },
-        h("p", { className: "__cu_intro" }, t("intro")),
-        // 运行模式（自带 label 的 select）
-        h("div", { className: "__cu_card" }, renderField(top[0])),
-        // AI 可自行修改运行模式
-        h("div", { className: "__cu_card" }, renderField(top[1])),
-        advanced.length ? h("details", { className: "__cu_advanced" },
-          h("summary", { className: "__cu_advancedSummary" }, t("advanced")),
-          h("div", { className: "__cu_advancedBody" },
-            advanced.map(renderField)
-          )
-        ) : null,
-        h("div", { className: "__cu_actions" },
-          h("button", { type: "button", className: "__cu_btn __cu_btnPrimary", onClick: onSave, disabled: busy || !snapshot.writable }, t("save")),
-          h("button", { type: "button", className: "__cu_btn __cu_btnSecondary", onClick: onReset, disabled: busy || !snapshot.writable }, t("reset")),
-          notice ? h("span", { className: "__cu_saved" }, notice) : null,
-          busy ? h("span", { className: "__cu_status" }, t("saving")) : null,
-          error ? h("span", { className: "__cu_error" }, error) : null
+      return h("div", { className: "__cu_form" },
+        h("p", { className: "__cu_notice" }, t("intro")),
+        readOnly ? h("p", { className: "__cu_notice" }, t("readOnly")) : null,
+        FIELDS.map(renderField),
+        h("div", { className: "__cu_footer" },
+          failed ? h("p", { className: "__cu_failed" }, t("saveFailed")) : null,
+          h("button", {
+            type: "button",
+            className: "__cu_save",
+            disabled: disabled || !dirty || invalid,
+            onClick: onSave,
+          }, saving ? t("saving") : t("save"))
         )
       );
-    }
-
-    function valueToDraft(value) {
-      var out = {};
-      FIELDS.forEach(function (f) {
-        if (f.type === "checkbox") {
-          out[f.key] = Boolean(value[CFG_KEYS[f.key]]);
-        } else if (f.type === "mode") {
-          out[f.key] = value[CFG_KEYS[f.key]] || "manual";
-        } else {
-          out[f.key] = String(value[CFG_KEYS[f.key]] ?? "");
-        }
-      });
-      return out;
     }
 
     function apply(ctx) {
@@ -360,7 +406,7 @@ window.__ModuleLoader__.load({
       }
 
       // DSH 0.2.x: one shared config form per Host plugin entry, fed by the
-      // settings describe mirror. `ensure()` starts the first read if idle.
+      // settings describe mirror. ensure() starts the first read if idle.
       ctx.inject(["configForms"], function (cctx) {
         var forms = cctx.configForms;
         var form = forms.get(NS);

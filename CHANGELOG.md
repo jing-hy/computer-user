@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.1 (2026-10-29)
+
+- **版本门禁覆盖全部 0.2.x**：peerDependencies 的 @deepseek-ai/dsh-settings 由逐个列出
+  预发布版本改为 `>=0.1.0-rc.6 <0.3.0-0`。这样 0.2.0-rc.1 / 0.2.0-rc.2 /
+  0.2.1-alpha.1..5 / 0.2.1-rc.1..4 / 0.2.2-alpha.2 全部通过宿主版本门禁；0.3.0 及其
+  预发布仍在范围外。用 semver includePrerelease 实测全部 16 个已发布 0.2.x 版本为 true，
+  0.3.0 / 0.3.0-rc.1 / 0.3.0-alpha.1 为 false。
+- **不兼容复核（0.2.0-rc.1 ↔ 0.2.2-alpha.2）**：SettingsForms（describe / update /
+  replace / mutate / configure）、configForms（get / whileServed / form 的 getSnapshot /
+  subscribe / set / unset / mutate / dispose）与 llm/stream waterfall 在 0.2.x 全段存在且
+  签名一致（0.2.0-rc.1 的 ConfigForm 构造函数多一个 persistence 参数、mirror 状态多一个
+  unavailable，都不影响本插件）。唯一的实际不兼容就是门禁范围本身。
+- **设置页 UI 对齐官方设置表单**：改用 @deepseek-ai/dsh-client-ui-primitives 的
+  settings-form 设计语言 —— 无卡片边框、字段间 0.5px 分隔线、13px/500 标签、34px 输入框
+  （--dsw-radius-md + bg-layer-3）、12px 三级提示、字段级「已覆盖」徽标 + 文字「恢复默认」、
+  底部一个实心保存按钮。移除折叠「高级设置」、胶囊按钮与卡片组。
+- **交互对齐官方**：草稿只在保存时通过 form.mutate(ops, revision) 原子写入；保存失败保留
+  草稿；清空文本/数字 = unset（回落到组合层默认值）；数字非法阻断保存；只读部署显示只读
+  提示。0.1.x 的 settingsScope 仍作为回退（逐个 set/unset）。
+- 新增 tests/settings-form-ui.test.js：静态锁定官方表单语言（不再出现卡片/胶囊/details、
+  使用官方 token 与 mutate 路径、覆盖徽标与恢复默认按钮存在）。
+
 ## 0.4.0 (2026-10-28)
 
 适配 DSH 内核 **0.2.x**（`@deepseek-ai/dsh-settings` 0.2 / `@deepseek-ai/dsh-llm` 0.2）：

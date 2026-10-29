@@ -31,7 +31,7 @@ import { runPs, powerShellScript } from './ps.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.4.0';
+export const version = '0.4.1';
 
 /** Services required at runtime. */
 export const inject = ['tools'];

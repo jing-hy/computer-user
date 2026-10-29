@@ -70,10 +70,12 @@ dsh plugin --profile web add computer-user
 Then restart DSH (or use the EAC settings → Plugins → Manage screen). The tools appear for
 any session; the settings card appears under Settings → Computer Use.
 
-Compatible with DSH 0.2.x (`@deepseek-ai/dsh-settings` / `@deepseek-ai/dsh-llm` 0.2) and
-0.1.x hosts: the 0.2 settings form (`configForms` / `SettingsForms`) and the `llm/stream`
-waterfall are used when present, and the 0.1.x namespaced settings scope and provider
-registration are kept as fallbacks.
+Compatible with every published DSH 0.2.x pre-release (`0.2.0-rc.1` … `0.2.2-alpha.2`)
+and with 0.1.x hosts. The version gate is `@deepseek-ai/dsh-settings >=0.1.0-rc.6 <0.3.0-0`,
+so the host plugin-compatibility check accepts all of them; 0.3.0 stays out of range until
+this plugin is verified against it. The 0.2 settings form (`configForms` / `SettingsForms`)
+and the `llm/stream` waterfall are used when present, and the 0.1.x namespaced settings
+scope and provider registration are kept as fallbacks.
 
 ### Pair with picturereader (recommended)
 
@@ -86,11 +88,13 @@ computer_screenshot → image_compare           # verify
 
 ## Settings card
 
-The settings card (「电脑操作 / Computer Use」) uses the DSH settings-panel design
-language — bordered card groups, capsule buttons, 32px inputs, chevron selects,
-rotating-chevron disclosure. It reads the plugin entry's own Config through
-`ctx.configForms` (DSH 0.2.x shared forms), so it stays in sync with the Host settings
-document and with `computer_set_mode`.
+The settings card (「电脑操作 / Computer Use」) uses the same settings form as the built-in
+plugin pages: a flat field list separated by hairline rules, 34px inputs on `bg-layer-3`,
+13px/500 labels, 12px tertiary hints, a per-field 「已覆盖 / Overridden」 badge with a text
+「恢复默认 / Reset to default」, and one filled save button. Edits are staged locally and
+written atomically on save (`mutate(ops, revision)`); a save the Host rejects keeps the
+drafts. Reading the plugin entry's own Config through `ctx.configForms` (DSH 0.2.x shared
+forms) keeps the card in sync with the Host settings document and with `computer_set_mode`.
 
 - **Mode dropdown** at the top of the card:
   - `disabled` — every `computer_*` tool refuses.
@@ -101,9 +105,9 @@ document and with `computer_set_mode`.
 - **AI may change mode itself** checkbox (below the dropdown, not in Advanced):
   off by default; when on, the AI can switch modes via `computer_set_mode` — changes are
   written to the same plugin Config entry, so the dropdown stays in sync both ways.
-- **高级设置 / Advanced** (collapsed by default): screenshot output dir, default scale,
-  typing interval, scroll units, **Reject code-as-text output (output guard, default on)**,
-  debug logging.
+- **截图输出目录 / Screenshot output dir**, **截图默认缩放 / Default scale**,
+  **逐字输入间隔 / Typing interval**, **滚动刻度 / Scroll units**,
+  **代码输出打回 / Reject code-as-text output (default on)**, **调试日志 / Debug logging**.
 
 **Output guard** is a host-side filter on the LLM stream: if the model writes a fake
 tool-call / XML markup as *conversation text* (e.g. `computer_click({…})` or `<invoke …>`
