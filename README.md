@@ -20,40 +20,49 @@ drag → verify. **Windows only.**
 
 > 中文说明见 [README.zh.md](README.zh.md)。
 
-## Works with pure text-only models + picturereader
+## Vision: native first, picturereader optional
 
-computer-user **does not need a multimodal model or any external vision API**. Any
-**pure text-only LLM** (e.g. DeepSeek V4 Flash) can drive the desktop end-to-end:
+The plugin never requires a vision plugin. `computer_screenshot` hands you a PNG path
+plus the foreground window, and every model can act from there:
 
-- `computer_screenshot` dumps the screen to a local PNG (no vision needed to capture).
-- **picturereader** turns that PNG into structured text the text-only model can read:
-  `image_scan` (layout/colors/regions), `image_ocr` (real text), `image_sample`
-  (texture), all local (Windows OCR / PaddleOCR / RapidOCR — no cloud).
-- The model "sees" via those descriptions, calls `computer_click` / `computer_type` /
-  … at the reported coordinates, then screenshots again to verify.
+- **Vision-capable models** (most current ones): screenshot → `read_image(path)` → act.
+  No extra plugin, no OCR step.
+- **Text-only models**: install [picturereader](https://github.com/jing-hy/picturereader)
+  and run `image_scan` / `image_ocr` on the same PNG. That path still works, it is just
+  no longer mandatory.
+- **No vision at all**: `computer_snapshot` returns the UI Automation tree with a
+  replayable id per element, so `computer_invoke` / `computer_set_value` /
+  `computer_focus` act on named controls without any pixels and without moving the pointer.
 
-So the loop is: screenshot (computer-user) → understand (picturereader) → act
-(computer-user) → verify (both) — entirely with text tokens and zero external APIs.
-See [skills/computer-use.md](skills/computer-use.md) for the locate-window → in-window
-OCR → click-once workflow.
+The classic loop is unchanged (look → act → verify); the look step is `read_image` for
+vision models and `image_ocr` for text-only ones. See
+[skills/computer-use.md](skills/computer-use.md).
 
 ## Tools
 
-| Tool | What it does |
-|---|---|
-| `computer_screenshot` | Save full virtual-screen PNG (region/scale optional) → `{path,width,height,virtual_offset,scale}` |
-| `computer_click` | Click at `[x,y]` (click / right_click / double_click) |
-| `computer_type` | Type arbitrary UTF-16 text — CJK included — via `SendInput` Unicode |
-| `computer_keypress` | Key chord, e.g. `["ctrl","c"]`, `["alt","tab"]`; letters/digits use virtual keys so shortcuts work |
-| `computer_scroll` | Wheel scroll at `[x,y]`: up / down / left / right, `clicks` notches |
-| `computer_drag` | Press → interpolate → release, optional `hold_keys` |
-| `computer_move_mouse` | Move cursor without clicking |
-| `computer_wait` | Sleep `ms` (let UI settle) |
-| `computer_get_cursor_position` | Read current cursor `[x,y]` |
+Nineteen tools. `tool_mode` can trim the set to nine everyday ones (see Settings).
 
-Coordinates are **pixels relative to the virtual-screen origin** (all monitors combined;
-`computer_screenshot` returns it as `virtual_offset`). `SetProcessDPIAware` keeps
-coordinates aligned with physical pixels on scaled displays.
+| Group | Tools |
+|---|---|
+| Look | `computer_screenshot` (PNG path + foreground window), `computer_snapshot` (UIA tree with locator ids), `computer_list_windows`, `computer_get_cursor_position` |
+| Pointer & keys | `computer_click`, `computer_type`, `computer_keypress`, `computer_scroll`, `computer_drag`, `computer_move_mouse` |
+| Controls, no pointer | `computer_invoke`, `computer_set_value`, `computer_focus` |
+| Windows | `computer_activate_window`, `computer_move_window`, `computer_close_window` |
+| Timing | `computer_wait` — fixed sleep, or wait-until a window / element / title substring appears |
+| Runtime | `computer_doctor` (PowerShell + UIA + stop state), `computer_set_mode` |
+
+Coordinates stay pixels relative to the virtual-screen origin (`virtual_offset`).
+UIA locators look like `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>` and are re-resolved on every
+action, so a stale locator fails instead of clicking whatever now sits at the old
+coordinates. `computer_screenshot` accepts `expected_window` to fence the same way.
+
+### Takeover pill and stop key
+
+Any side-effecting call raises a blue pill at the top center of the screen: DSH is
+controlling your computer, press Ctrl+Alt+Esc to stop. The hotkey (configurable) and the
+pill Stop button both write a stop flag; every later `computer_*` call refuses to act
+until the user approves again. The pill runs in its own process, so the key still lands
+while the input backend is busy.
 
 ## Install
 
@@ -108,6 +117,10 @@ forms) keeps the card in sync with the Host settings document and with `computer
 - **截图输出目录 / Screenshot output dir**, **截图默认缩放 / Default scale**,
   **逐字输入间隔 / Typing interval**, **滚动刻度 / Scroll units**,
   **代码输出打回 / Reject code-as-text output (default on)**, **调试日志 / Debug logging**.
+- **工具分档 / Tool set**: all (19) / lite (9 everyday tools) / custom (allow-list by name).
+- **自定义白名单 / Custom allow-list**: comma-separated tool names used with custom.
+- **急停热键 / Stop hotkey** (default `ctrl+alt+esc`), **提示条自动收起（分钟） / Auto-dismiss
+  (minutes)**, **提示条文案 / Pill caption** — `{key}` is replaced with the hotkey.
 
 **Output guard** is a host-side filter on the LLM stream: if the model writes a fake
 tool-call / XML markup as *conversation text* (e.g. `computer_click({…})` or `<invoke …>`

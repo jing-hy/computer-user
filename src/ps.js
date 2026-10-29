@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +82,67 @@ export function runPs(scriptName, payload, { timeoutMs = 25000, signal } = {}) {
 
     child.stdin.end();
   });
+}
+
+// ── takeover guard: pill window + global stop key ─────────────────────────
+// The pill runs as its own process so the stop key still lands while the input
+// backend is busy. It writes a stop flag that every computer_* call checks
+// before acting, which is what makes "press the key and it actually stops" true.
+
+const GUARD_DIR = join(tmpdir(), 'computer-user');
+const GUARD_STOP_FLAG = join(GUARD_DIR, 'stop.flag');
+const GUARD_PID_FILE = join(GUARD_DIR, 'guard.pid');
+
+/** True once the user pressed the stop key (or asked to stop). */
+export function isStopped() {
+  return existsSync(GUARD_STOP_FLAG);
+}
+
+/** Write the stop flag so subsequent calls refuse to act. */
+export function requestStop(reason = 'agent') {
+  try {
+    mkdirSync(GUARD_DIR, { recursive: true });
+    writeFileSync(GUARD_STOP_FLAG, 'reason=' + reason + ' at=' + new Date().toISOString(), 'utf8');
+  } catch { /* best effort */ }
+}
+
+/** Clear the stop flag (a new approval starts a fresh takeover). */
+export function clearStop() {
+  try { rmSync(GUARD_STOP_FLAG, { force: true }); } catch { /* best effort */ }
+}
+
+/** Read whether the pill process is alive and whether a stop is pending. */
+export function guardState() {
+  let running = false;
+  let pid;
+  try {
+    const raw = readFileSync(GUARD_PID_FILE, 'utf8').trim();
+    pid = Number(raw);
+    if (Number.isFinite(pid) && pid > 0) {
+      try { process.kill(pid, 0); running = true; } catch { running = false; }
+    }
+  } catch { /* no pid file */ }
+  return { running, pid, stopped: isStopped(), stateDir: GUARD_DIR };
+}
+
+/**
+ * Start the takeover pill if it is not already up. Never restarts after a stop:
+ * the user asked for it to end, so the next takeover needs a fresh approval.
+ * @returns {boolean} whether a pill is (now) running.
+ */
+export function ensureGuard(payload = {}) {
+  const state = guardState();
+  if (state.stopped) return false;
+  if (state.running) return true;
+  clearStop();
+  const b64 = Buffer.from(JSON.stringify(payload ?? {}), 'utf8').toString('base64');
+  const child = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', powerShellScript('guard.ps1'), '-Json', b64],
+    { windowsHide: true, detached: true, stdio: 'ignore' }
+  );
+  child.unref();
+  return true;
 }
 
 export default runPs;

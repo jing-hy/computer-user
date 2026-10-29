@@ -18,38 +18,41 @@
 
 > English: [README.md](README.md)。
 
-## 纯文本模型搭配 picturereader 即可使用
+## 视觉：原生优先，picturereader 可选
 
-computer-user **不需要多模态模型，也不需要任何外部视觉 API**——任何**纯文本大模型**
-（如 DeepSeek V4 Flash）都能端到端驱动桌面：
+插件不强制任何视觉插件。`computer_screenshot` 返回 PNG 路径 + 前台窗口，之后怎么"看"由模型决定：
 
-- `computer_screenshot` 把屏幕存成本地 PNG（截图本身不需要视觉）。
-- **picturereader** 把 PNG 转成纯文本模型能读的结构化描述：`image_scan`（布局/颜色/
-  regions）、`image_ocr`（真实文字，Windows OCR / PaddleOCR / RapidOCR，全本地）、
-  `image_sample`（纹理）。
-- 模型靠这些描述"看"屏幕 → 用 `computer_click` / `computer_type` / … 在报告坐标上
-  操作 → 再截图验证。
+- **有原生视觉的模型**（现在多数）：截图 → `read_image(path)` 看图 → 操作。不需要额外插件，也不用 OCR。
+- **纯文本模型**：装 [picturereader](https://github.com/jing-hy/picturereader)，对同一张 PNG 跑
+  `image_scan` / `image_ocr`。这条路仍然可用，只是不再是必需。
+- **完全不用视觉**：`computer_snapshot` 返回 UI Automation 控件树和可重放的元素 id，
+  `computer_invoke` / `computer_set_value` / `computer_focus` 直接按控件名操作，不看像素、不动鼠标。
 
-闭环 = 截图（computer-user）→ 理解（picturereader）→ 操作（computer-user）→ 验证
-（两者），全程只有文本 token、零外部 API。详见 [skills/computer-use.md](skills/computer-use.md)
-的「先定位窗口 → 窗口内分块 OCR → 一击即中」流程。
+闭环没变（看 → 操作 → 验证）；"看"这一步对有视觉的模型是 `read_image`，对纯文本模型是 `image_ocr`。
+详见 [skills/computer-use.md](skills/computer-use.md)。
 
 ## 工具
 
-| 工具 | 作用 |
-|---|---|
-| `computer_screenshot` | 保存整虚拟屏 PNG（可选 region/scale）→ `{path,width,height,virtual_offset,scale}` |
-| `computer_click` | 在 `[x,y]` 点击（click / right_click / double_click） |
-| `computer_type` | 输入任意 UTF-16 文本（含中文），走 `SendInput` Unicode |
-| `computer_keypress` | 组合键，如 `["ctrl","c"]`、`["alt","tab"]`；字母/数字走虚拟键以触发快捷键 |
-| `computer_scroll` | 在 `[x,y]` 滚轮：up / down / left / right，`clicks` 格 |
-| `computer_drag` | 按下 → 分步移动 → 释放，可选 `hold_keys` |
-| `computer_move_mouse` | 移动光标但不点击 |
-| `computer_wait` | 等待 `ms`（让 UI 稳定） |
-| `computer_get_cursor_position` | 读取当前光标位置 `[x,y]` |
+共 19 个；`tool_mode` 可收敛到 9 个常用工具（见设置卡）。
 
-坐标为「相对**虚拟屏原点**（所有显示器合并区域左上角）」的像素；`computer_screenshot`
-返回的 `virtual_offset` 即该原点。`SetProcessDPIAware` 保证高分屏缩放下坐标与物理像素一致。
+| 分组 | 工具 |
+|---|---|
+| 看 | `computer_screenshot`（PNG + 前台窗口）、`computer_snapshot`（UIA 控件树 + locator）、`computer_list_windows`、`computer_get_cursor_position` |
+| 指针与键盘 | `computer_click`、`computer_type`、`computer_keypress`、`computer_scroll`、`computer_drag`、`computer_move_mouse` |
+| 控件（不动鼠标） | `computer_invoke`、`computer_set_value`、`computer_focus` |
+| 窗口 | `computer_activate_window`、`computer_move_window`、`computer_close_window` |
+| 等待 | `computer_wait` —— 固定等待，或等到窗口 / 元素 / 标题出现 |
+| 运行时 | `computer_doctor`（自检）、`computer_set_mode` |
+
+坐标仍是相对虚拟屏原点的像素（`virtual_offset`）。UIA locator 形如
+`h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`，每次动作都重新解析 —— 界面变了会直接报错，不会点到别处。
+`computer_screenshot` 可传 `expected_window` 做同样的前台窗口围栏。
+
+### 急停提示条
+
+任何副作用调用都会在屏幕上方居中弹出蓝色圆角提示条：「DSH 正在操控你的电脑 · 按 Ctrl+Alt+Esc 停止」。
+热键（可配置）或点 Stop 都会写停止标记，之后所有 `computer_*` 拒绝执行，直到重新批准。
+提示条是独立进程，输入后端忙时热键依然有效。
 
 ## 安装
 

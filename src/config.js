@@ -48,4 +48,24 @@ export const Config = z.object({
     .boolean()
     .default(false)
     .description('调试日志')),
+  tool_mode: live(z
+    .union([z.const('all'), z.const('lite'), z.const('custom')])
+    .default('all')
+    .description('工具分档：all=全部 | lite=常用工具 | custom=按白名单')),
+  enabled_tools: live(z
+    .array(z.string())
+    .default([])
+    .description('custom 白名单：允许注册的工具名（空=全部）')),
+  stop_hotkey: live(z
+    .string()
+    .default('ctrl+alt+esc')
+    .description('急停热键（接管提示条上显示）')),
+  takeover_minutes: live(z
+    .number()
+    .default(30)
+    .description('接管提示条自动收起的分钟数（0=不自动收起）')),
+  takeover_message: live(z
+    .string()
+    .default('')
+    .description('接管提示条文案（空=默认）')),
 });

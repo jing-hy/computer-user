@@ -38,27 +38,45 @@ function makeEnv(overrides = {}) {
   return { tools, byName, calls, runPs, getConfig, state, exec, approvedSessions, sessionId, setMode };
 }
 
-test('registers exactly the 10 computer_* tools, all non-concurrency-safe', () => {
+test('registers exactly the 19 computer_* tools, side-effecting ones non-concurrency-safe', () => {
   const { tools } = makeEnv();
-  assert.equal(tools.length, 10);
+  assert.equal(tools.length, 19);
+  const readonly = new Set([
+    'computer_screenshot',
+    'computer_get_cursor_position',
+    'computer_wait',
+    'computer_snapshot',
+    'computer_list_windows',
+    'computer_doctor',
+  ]);
   for (const t of tools) {
     assert.match(t.name, /^computer_/);
     assert.equal(typeof t.execute, 'function');
-    assert.equal(t.isConcurrencySafe(), false, t.name);
+    assert.equal(typeof t.isConcurrencySafe(), 'boolean', t.name + ' must declare concurrency safety');
+    if (!readonly.has(t.name)) assert.equal(t.isConcurrencySafe(), false, t.name + ' has side effects');
     assert.ok(t.parameters?.properties, `${t.name} needs parameters.properties`);
     assert.ok(t.output?.schema, `${t.name} needs output.schema`);
     assert.ok(t.output?.render, `${t.name} needs output.render`);
   }
   const names = new Set(tools.map((t) => t.name));
   assert.deepEqual([...names].sort(), [
+    'computer_activate_window',
     'computer_click',
+    'computer_close_window',
+    'computer_doctor',
     'computer_drag',
+    'computer_focus',
     'computer_get_cursor_position',
+    'computer_invoke',
     'computer_keypress',
+    'computer_list_windows',
     'computer_move_mouse',
+    'computer_move_window',
     'computer_screenshot',
     'computer_scroll',
     'computer_set_mode',
+    'computer_set_value',
+    'computer_snapshot',
     'computer_type',
     'computer_wait',
   ]);

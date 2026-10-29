@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0 (2026-10-29)
+
+- **有视觉就能用**：`computer_screenshot` 返回 PNG 路径 + 前台窗口；模型直接
+  `read_image(path)` 看图，picturereader 从「必需」降为「可选」（仅文本模型要精确文字时才用）。
+- **UIA 结构化观测**：新增 `computer_snapshot`（控件树 + 可重放 locator）与
+  `computer_invoke` / `computer_set_value` / `computer_focus` —— 不移动鼠标、不抢前台，
+  元素 id 形如 `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`，每次动作重新解析。
+- **窗口工具**：`computer_list_windows` / `computer_activate_window` / `computer_move_window` /
+  `computer_close_window`。
+- **急停**：副作用调用自动弹出屏幕上方居中的蓝色圆角提示条（「DSH 正在操控你的电脑 · 按
+  Ctrl+Alt+Esc 停止」）；热键（可配置）或点 Stop 写停止标记，此后所有 `computer_*` 拒绝执行直到
+  重新批准。提示条是独立进程，后端忙时热键仍然有效。
+- **过期状态拒绝**：`computer_screenshot` 可传 `expected_window` 做前台窗口围栏；locator 每次
+  动作重新解析，失效直接报错而不是点到别处。
+- **等待条件**：`computer_wait` 支持 `window` / `target` / `title_contains` + `timeout_ms`。
+- **工具分档**：`tool_mode=all|lite|custom` + `enabled_tools` 白名单（默认 all=19 个，lite=9 个）。
+- **doctor**：`computer_doctor` 自检 PowerShell / UIA / 临时目录 / 停止状态 / 当前模式。
+- **设置页**：新增工具分档、白名单、急停热键、提示条自动收起时长与文案。
+- 测试 72/72（新增 13 条：UIA 快照 id 压缩、控件动作、急停短路、提示条启动、截图围栏、条件等待、分档、doctor）。
+
 ## 0.4.1 (2026-10-29)
 
 - **版本门禁覆盖全部 0.2.x**：peerDependencies 的 @deepseek-ai/dsh-settings 由逐个列出

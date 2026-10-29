@@ -21,13 +21,29 @@ const COORD = {
 };
 
 const HEAD =
-  '先调用 computer_screenshot 获取当前屏幕（>0.8 缩放即可），再用 picturereader 的 image_scan / image_ocr 分析，最后才执行本次操作。';
+  '先看屏幕：computer_screenshot 返回 PNG 路径，有视觉的模型直接 read_image(path) 看图（不依赖任何插件）；需要精确文字时再交给 picturereader 的 image_scan / image_ocr（可选，不装也能用）。要稳定的控件级操作，先 computer_snapshot 读 UIA 控件树，再用 computer_invoke / computer_set_value / computer_focus 按元素 id 操作（不移动鼠标、不抢前台）。';
 
 /** Tools that are always safe (no side effects on the user's desktop). */
 const READONLY_TOOLS = new Set([
   'computer_screenshot',
   'computer_get_cursor_position',
   'computer_wait',
+  'computer_snapshot',
+  'computer_list_windows',
+  'computer_doctor',
+]);
+
+/** Tools kept when tool_mode=lite (the ones a normal task needs). */
+const LITE_TOOLS = new Set([
+  'computer_screenshot',
+  'computer_snapshot',
+  'computer_click',
+  'computer_type',
+  'computer_keypress',
+  'computer_scroll',
+  'computer_wait',
+  'computer_get_cursor_position',
+  'computer_set_mode',
 ]);
 
 const MODES = ['disabled', 'readonly', 'manual', 'auto'];
@@ -92,7 +108,7 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
@@ -101,14 +117,33 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     : sessionId
       ? [sessionId]
       : [];
-  const gate = (toolName) => modeGate(getConfig(), toolName, approvedSessions, approvalIds);
+  const stoppedError = () => {
+    const e = new Error('computer-user 已急停：用户按下了停止热键（或点了停止按钮）。请让用户确认后重新 /computer 批准，或重启会话。');
+    e.stopped = true;
+    return e;
+  };
+  // Every tool call passes this gate: mode → stop flag → takeover pill.
+  const gate = (toolName) => {
+    modeGate(getConfig(), toolName, approvedSessions, approvalIds);
+    if (typeof isStopped === 'function' && isStopped()) throw stoppedError();
+    if (!READONLY_TOOLS.has(toolName) && typeof ensureGuard === 'function') {
+      const cfg = getConfig();
+      try {
+        ensureGuard({
+          hotkey: cfg.stop_hotkey || 'ctrl+alt+esc',
+          message: cfg.takeover_message || undefined,
+          timeoutMs: Math.max(60000, Number(cfg.takeover_minutes ?? 30) * 60000),
+        });
+      } catch { /* the pill is a nicety; never block an action on it */ }
+    }
+  };
 
   // -- computer_screenshot ---------------------------------------------------
   const computerScreenshot = {
     name: 'computer_screenshot',
     description: [
-      'Capture the whole virtual screen (all monitors) to a PNG file and return its path, so ' +
-      'picturereader\'s image_scan / image_ocr can analyze it (the look step of computer use).',
+      'Capture the whole virtual screen (all monitors) to a PNG file and return its path plus the foreground window.',
+      'Models with native vision read it with read_image(path) — no extra plugin required. Use picturereader image_scan / image_ocr only when exact characters are needed.',
       `${HEAD}`,
       'Parameters: path (optional — where to save; when empty a unique file is written under the configured screenshot_dir, defaulting to the OS temp dir), region (optional [x0,y0,x1,y1] fractions in 0..1 to capture a sub-area), scale (optional 0.1..1 to downscale the saved image).',
       'Returns { path, width, height, virtual_offset:[x,y], scale }. virtual_offset is the virtual-screen origin you must add to a monitor\'s local pixel when targeting that monitor.',
@@ -120,12 +155,13 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
         path: { type: 'string', description: 'Optional absolute or cwd-relative output path for the PNG. When empty a unique file is created under the configured screenshot_dir (default: OS temp).' },
         region: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'number' }, description: 'Optional [x0, y0, x1, y1] fractions (0..1) to capture only a sub-area of the virtual screen.' },
         scale: { type: 'number', description: 'Optional 0.1..1 downscale for the saved image (default: the configured default_scale, 1 = full resolution).' },
+        expected_window: { type: 'number', description: 'Optional hwnd from the previous screenshot; refuses when the foreground window changed since then (stale-observation fence).' },
       },
       required: [],
     },
     output: textOut({
       required: ['path', 'width', 'height', 'virtual_offset', 'scale'],
-    }, ['screenshot saved (feed path to picturereader image_scan / image_ocr)']),
+    }, ['screenshot saved — vision models: read_image(path); exact text: image_ocr(path); controls: computer_snapshot()']),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       gate('computer_screenshot');
@@ -141,7 +177,30 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
         region: Array.isArray(args?.region) && args.region.length === 4 ? args.region : undefined,
         scale: typeof args?.scale === 'number' ? args.scale : cfg.default_scale,
       };
-      return runPs('capture.ps1', payload, { signal: exec?.signal });
+      const expected = args?.expected_window;
+      if (expected !== undefined && expected !== null && String(expected).length > 0) {
+        try {
+          const probe = await runPs('observe.ps1', { action: 'foreground' }, { signal: exec?.signal, timeoutMs: 8000 });
+          const fgNow = probe.foreground;
+          if (String(fgNow?.handle) !== String(expected)) {
+            throw new Error('computer_screenshot: 前台窗口已变化（expected hwnd=' + expected + '，现在是 hwnd=' + fgNow?.handle + ' title=' + JSON.stringify(fgNow?.title) + '）。请重新截图确认界面。');
+          }
+        } catch (e) {
+          if (String(e?.message || '').includes('前台窗口已变化')) throw e;
+        }
+      }
+      const shot = await runPs('capture.ps1', payload, { signal: exec?.signal });
+      let fg;
+      try {
+        const probe = await runPs('observe.ps1', { action: 'foreground' }, { signal: exec?.signal, timeoutMs: 8000 });
+        fg = probe.foreground;
+      } catch { /* observation is best-effort */ }
+      return {
+        ...shot,
+        captured_at: new Date().toISOString(),
+        window: fg,
+        look: 'vision models: read_image(path); exact text: image_ocr(path); controls: computer_snapshot()',
+      };
     },
   };
 
@@ -267,13 +326,39 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
 
   const computerWait = {
     name: 'computer_wait',
-    description: ['Wait for a short period (e.g. let a UI animation settle). No side effects.', 'Parameters: ms (required, duration in milliseconds).'],
-    parameters: { type: 'object', additionalProperties: true, properties: { ms: { type: 'number' } }, required: ['ms'] },
+    description: [
+      'Wait for a duration, or wait until a condition is true (poll every 250ms). No side effects.',
+      'Parameters: ms (optional duration in milliseconds), and optionally one condition: window (hwnd to appear), target (element id from computer_snapshot to appear), title_contains (substring of a window title), timeout_ms (condition deadline, default 15000).',
+      'Prefer a condition over a fixed sleep when an app is slow: it returns as soon as the UI settles.',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        ms: { type: 'number', description: 'Sleep duration when no condition is given.' },
+        window: { type: 'number', description: 'Wait until this hwnd exists.' },
+        target: { type: 'string', description: 'Wait until this element id (locator) resolves.' },
+        title_contains: { type: 'string', description: 'Wait until some window title contains this substring.' },
+        timeout_ms: { type: 'number', description: 'Condition deadline in ms (default 15000, max 60000).' },
+      },
+      required: [],
+    },
     output: textOut({ required: ['waited'] }),
-    isConcurrencySafe: () => false,
+    isConcurrencySafe: () => true,
     async execute(args, exec) {
       gate('computer_wait');
-      const ms = Math.max(0, Number(args.ms) || 0);
+      const condition = {};
+      if (args?.window !== undefined && args?.window !== null) condition.handle = Number(args.window);
+      if (args?.target) condition.locator = String(args.target);
+      if (args?.title_contains) condition.titleContains = String(args.title_contains);
+      if (Object.keys(condition).length > 0) {
+        const timeoutMs = Math.min(60000, Math.max(500, Number(args.timeout_ms ?? 15000)));
+        const res = await runPs('observe.ps1', { action: 'wait', ...condition, timeoutMs }, { signal: exec?.signal, timeoutMs: timeoutMs + 8000 });
+        if (!res.found) {
+          throw new Error('computer_wait: 条件等待超时（' + timeoutMs + 'ms）：' + JSON.stringify(condition));
+        }
+        return { found: true, condition: condition, timeout_ms: timeoutMs };
+      }
+      const ms = Math.max(0, Number(args?.ms ?? 1000) || 0);
       await new Promise((resolve, reject) => {
         const timer = setTimeout(resolve, ms);
         exec?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('computer_wait: cancelled')); }, { once: true });
@@ -328,9 +413,224 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     },
   };
 
+  // -- structured observation (UI Automation) --------------------------------
+  // Locators are shortened on the model side to keep the list cheap; observe.ps1
+  // accepts both spellings.
+  const shortId = (id) => String(id || '')
+    .replace('hwnd=', 'h=')
+    .replace('|role=', '|r=')
+    .replace('|name=', '|n=')
+    .replace('|nth=', '|i=');
+
+  const computerSnapshot = {
+    name: 'computer_snapshot',
+    description: [
+      'Read the UI Automation tree of one window (default: the foreground window) and return a bounded, indexed element list with a replayable id per element.',
+      'Prefer this over pixel guessing when you need to click a named button or fill a field: far fewer tokens than a screenshot, and it never moves the pointer.',
+      'Each id is a locator (window handle + role + name + occurrence). Pass it to computer_invoke / computer_set_value / computer_focus. If the UI changed, the locator fails loudly instead of hitting whatever now sits at the old coordinates.',
+      'Parameters: window (optional hwnd; default foreground), max_depth (default 6, max 10), max_nodes (default 80, max 400).',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        window: { type: 'number', description: 'Target window handle (hwnd). Empty = the foreground window.' },
+        max_depth: { type: 'number', description: 'Tree depth cap (default 6).' },
+        max_nodes: { type: 'number', description: 'Node budget (default 80, max 400).' },
+      },
+      required: [],
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => {
+        const obs = value.observation || {};
+        const win = obs.window || {};
+        const lines = [
+          'window: ' + (win.title || '(no title)') + ' (hwnd=' + win.handle + ', ' + (win.process || '?') + ')',
+          'captured_at: ' + (obs.capturedAt || '?') + (obs.truncated ? ' (truncated)' : ''),
+        ];
+        for (const el of value.elements || []) {
+          const r = el.rect ? ' @' + el.rect.x + ',' + el.rect.y + ' ' + el.rect.w + 'x' + el.rect.h : '';
+          const flags = (el.enabled === false ? ' [disabled]' : '') + (el.value !== null && el.value !== undefined && el.value !== '' ? ' [' + el.value + ']' : '');
+          lines.push('[' + el.role + '] ' + (el.name || el.autoId || '(unnamed)') + r + flags + '  id=' + el.id);
+        }
+        if (!value.elements || value.elements.length === 0) {
+          lines.push('(no controls exposed — the app may be custom-drawn; fall back to computer_screenshot + coordinates)');
+        }
+        return [{ type: 'text', text: lines.join('\n') }];
+      },
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      gate('computer_snapshot');
+      const payload = {
+        action: 'snapshot',
+        maxDepth: Math.min(10, Math.max(1, Number(args?.max_depth ?? 6))),
+        maxNodes: Math.min(400, Math.max(10, Number(args?.max_nodes ?? 80))),
+      };
+      if (args?.window !== undefined && args?.window !== null) payload.handle = Number(args.window);
+      const res = await runPs('observe.ps1', payload, { signal: exec?.signal, timeoutMs: 30000 });
+      const elements = (res.elements || []).map((el) => ({ ...el, id: shortId(el.id) }));
+      return { observation: res.observation, elements };
+    },
+  };
+
+  // -- control actions (no pointer movement) --------------------------------
+  const makeActTool = (name, kind, label, hint, extraProps, extraRequired) => ({
+    name,
+    description: [
+      label,
+      hint,
+      'Parameters: target (required element id from computer_snapshot)' +
+        (extraRequired.length ? ', ' + extraRequired.join(', ') : '') +
+        ', require_foreground (optional bool, default true — refuses when the target window is not the foreground window).',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        target: { type: 'string', description: 'Element id returned by computer_snapshot.' },
+        require_foreground: { type: 'boolean', description: 'Refuse when the target window is not the foreground window (default true).' },
+        ...extraProps,
+      },
+      required: ['target', ...extraRequired],
+    },
+    output: textOut({ required: ['action'] }),
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      gate(name);
+      const payload = {
+        action: 'act',
+        kind,
+        locator: String(args.target),
+        requireForeground: args.require_foreground !== false,
+      };
+      if (kind === 'set_value') payload.value = String(args.value ?? '');
+      const res = await runPs('observe.ps1', payload, { signal: exec?.signal, timeoutMs: 20000 });
+      return { action: res.action, window: res.window };
+    },
+  });
+
+  const computerInvoke = makeActTool(
+    'computer_invoke', 'invoke',
+    'Invoke the default action of a control (press a button, follow a link) without moving the pointer.',
+    'Prefer this over computer_click whenever computer_snapshot exposes an Invoke pattern.',
+    {}, []
+  );
+  const computerSetValue = makeActTool(
+    'computer_set_value', 'set_value',
+    'Set a control value directly (text field, combo) without typing and without touching the clipboard.',
+    'Works even when the control is scrolled out of view, as long as UI Automation exposes a Value pattern.',
+    { value: { type: 'string', description: 'New value.' } }, ['value']
+  );
+  const computerFocus = makeActTool(
+    'computer_focus', 'focus',
+    'Move keyboard focus to a control without clicking it.',
+    'Follow with computer_type to type into it.',
+    {}, []
+  );
+
+  // -- windows ---------------------------------------------------------------
+  const computerListWindows = {
+    name: 'computer_list_windows',
+    description: 'List top-level windows (handle, title, process, rectangle, focused). Use the handle in computer_snapshot / computer_activate_window / computer_move_window / computer_close_window.',
+    parameters: { type: 'object', additionalProperties: true, properties: {}, required: [] },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => {
+        const lines = [];
+        for (const w of value.windows || []) {
+          const r = w.rect ? ' @' + w.rect.x + ',' + w.rect.y + ' ' + w.rect.w + 'x' + w.rect.h : '';
+          lines.push('hwnd=' + w.handle + ' [' + (w.process || '?') + '] ' + (w.title || '(no title)') + r + (w.focused ? ' (focused)' : ''));
+        }
+        if (lines.length === 0) lines.push('(no visible top-level windows)');
+        return [{ type: 'text', text: lines.join('\n') }];
+      },
+    },
+    isConcurrencySafe: () => true,
+    async execute(_args, exec) {
+      gate('computer_list_windows');
+      const res = await runPs('observe.ps1', { action: 'windows' }, { signal: exec?.signal, timeoutMs: 20000 });
+      return { windows: res.windows || [] };
+    },
+  };
+
+  const makeWindowTool = (name, kind, label, hint, extraProps, extraRequired) => ({
+    name,
+    description: [label, hint, 'Parameters: window (required hwnd from computer_list_windows)' + (extraRequired.length ? ', ' + extraRequired.join(', ') : '') + '.'].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: { window: { type: 'number', description: 'Window handle (hwnd).' }, ...extraProps },
+      required: ['window', ...extraRequired],
+    },
+    output: textOut({ required: ['action'] }),
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      gate(name);
+      const payload = { action: 'window', kind, handle: Number(args.window) };
+      if (kind === 'move') payload.rect = args.rect;
+      const res = await runPs('observe.ps1', payload, { signal: exec?.signal, timeoutMs: 15000 });
+      return { action: res.action, handle: res.handle, rect: res.rect };
+    },
+  });
+
+  const computerActivateWindow = makeWindowTool(
+    'computer_activate_window', 'activate',
+    'Bring a window to the foreground.',
+    'Use after computer_list_windows; returning focus matters for coordinate clicks.',
+    {}, []
+  );
+  const computerMoveWindow = makeWindowTool(
+    'computer_move_window', 'move',
+    'Move/resize a window to an explicit rectangle.',
+    'Handy for putting two windows side by side before a drag or compare.',
+    { rect: { type: 'object', description: 'Target rectangle {x,y,w,h} in virtual-screen pixels.', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, required: ['x', 'y', 'w', 'h'] } },
+    ['rect']
+  );
+  const computerCloseWindow = makeWindowTool(
+    'computer_close_window', 'close',
+    'Ask a window to close (posts WM_CLOSE; the app may prompt to save).',
+    'This is a request, not a kill: unsaved-work dialogs still need handling.',
+    {}, []
+  );
+
+  // -- doctor ---------------------------------------------------------------
+  const computerDoctor = {
+    name: 'computer_doctor',
+    description: 'Self-check the runtime: PowerShell version, UI Automation availability, temp/state directory, pending stop, active mode and tool_mode. Run this first when a computer_* call fails without an obvious cause.',
+    parameters: { type: 'object', additionalProperties: true, properties: {}, required: [] },
+    output: textOut({ required: ['powershell', 'uia'] }),
+    isConcurrencySafe: () => true,
+    async execute(_args, exec) {
+      gate('computer_doctor');
+      const probe = await runPs('observe.ps1', { action: 'probe' }, { signal: exec?.signal, timeoutMs: 15000 });
+      let foreground;
+      try {
+        const res = await runPs('observe.ps1', { action: 'foreground' }, { signal: exec?.signal, timeoutMs: 8000 });
+        foreground = res.foreground;
+      } catch { /* best effort */ }
+      const cfg = getConfig();
+      return {
+        powershell: probe.powershell,
+        edition: probe.edition,
+        uia: probe.uia,
+        uia_error: probe.uiaError || undefined,
+        temp_writable: probe.tempWritable,
+        state_dir: probe.tempDir,
+        stopped: typeof isStopped === 'function' ? isStopped() : false,
+        mode: cfg.mode,
+        tool_mode: cfg.tool_mode || 'all',
+        stop_hotkey: cfg.stop_hotkey || 'ctrl+alt+esc',
+        foreground: foreground ? { handle: foreground.handle, title: foreground.title } : undefined,
+      };
+    },
+  };
+
   const tools = [
     computerScreenshot,
+    computerSnapshot,
     computerClick,
+    computerInvoke,
+    computerSetValue,
+    computerFocus,
     computerType,
     computerKeypress,
     computerScroll,
@@ -338,8 +638,25 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     computerMoveMouse,
     computerWait,
     computerGetCursorPosition,
+    computerListWindows,
+    computerActivateWindow,
+    computerMoveWindow,
+    computerCloseWindow,
+    computerDoctor,
     computerSetMode,
   ];
+
+  // tool_mode: all (default) | lite | custom (enabled_tools allow-list).
+  const cfgNow = getConfig();
+  const mode = String(cfgNow.tool_mode || 'all');
+  if (mode === 'lite') return tools.filter((t) => LITE_TOOLS.has(t.name));
+  if (mode === 'custom') {
+    const allow = Array.isArray(cfgNow.enabled_tools) && cfgNow.enabled_tools.length
+      ? new Set(cfgNow.enabled_tools.map(String))
+      : null;
+    if (allow) return tools.filter((t) => allow.has(t.name));
+  }
+  return tools;
 
   for (const tool of tools) {
     if (Array.isArray(tool.description)) tool.description = tool.description.join(' ');

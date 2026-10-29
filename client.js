@@ -68,6 +68,12 @@ window.__ModuleLoader__.load({
     var NS = "computer-user";
     var inject = ["slots", "locale"];
 
+    var TOOL_MODE_OPTS = [
+      { value: "all", labelKey: "toolModeAll" },
+      { value: "lite", labelKey: "toolModeLite" },
+      { value: "custom", labelKey: "toolModeCustom" },
+    ];
+
     var MODE_OPTS = [
       { value: "disabled", labelKey: "modeDisabled" },
       { value: "readonly", labelKey: "modeReadonly" },
@@ -98,6 +104,19 @@ window.__ModuleLoader__.load({
       outputGuardHint: "把工具调用/伪 XML 写成对话文本时打回并提示；同内容第二次放行。关闭则不拦截。",
       debug: "调试日志",
       debugHint: "在日志里打印 PowerShell 脚本路径，仅排查时开启。",
+      toolMode: "工具分档",
+      toolModeAll: "全部",
+      toolModeLite: "常用",
+      toolModeCustom: "自定义",
+      toolModeHint: "全部=19 个工具 | 常用=截图/快照/点击/输入/按键/滚动/等待 | 自定义=按白名单注册",
+      enabledTools: "自定义白名单",
+      enabledToolsHint: "逗号分隔的工具名；配合\"自定义\"生效（留空=全部）。例如 computer_screenshot, computer_snapshot, computer_click",
+      stopHotkey: "急停热键",
+      stopHotkeyHint: "接管提示条上显示的组合键，默认 ctrl+alt+esc；也可直接点提示条上的 Stop。",
+      takeoverMinutes: "提示条自动收起（分钟）",
+      takeoverMinutesHint: "超过这个时长自动结束接管并写停止标记；0 表示不自动收起。",
+      takeoverMessage: "提示条文案",
+      takeoverMessageHint: "留空使用默认文案；{key} 会替换成急停热键。",
       overridden: "已覆盖",
       reset: "恢复默认",
       save: "保存",
@@ -130,6 +149,19 @@ window.__ModuleLoader__.load({
       outputGuardHint: "Rejects tool-call/XML written as conversation text; the same text passes on the second output. Off disables.",
       debug: "Debug logging",
       debugHint: "Logs the PowerShell script paths; enable only while diagnosing.",
+      toolMode: "Tool set",
+      toolModeAll: "All",
+      toolModeLite: "Lite",
+      toolModeCustom: "Custom",
+      toolModeHint: "All=19 tools | Lite=screenshot/snapshot/click/type/keypress/scroll/wait | Custom=named allow-list",
+      enabledTools: "Custom allow-list",
+      enabledToolsHint: "Comma-separated tool names, used with Custom (empty = all). e.g. computer_screenshot, computer_snapshot, computer_click",
+      stopHotkey: "Stop hotkey",
+      stopHotkeyHint: "Hotkey shown on the takeover pill (default ctrl+alt+esc); the pill's Stop button always works.",
+      takeoverMinutes: "Auto-dismiss pill (minutes)",
+      takeoverMinutesHint: "After this long the takeover ends and writes the stop flag; 0 = never auto-dismiss.",
+      takeoverMessage: "Pill caption",
+      takeoverMessageHint: "Empty uses the default; {key} is replaced with the stop hotkey.",
       overridden: "Overridden",
       reset: "Reset to default",
       save: "Save",
@@ -149,6 +181,11 @@ window.__ModuleLoader__.load({
       { key: "scroll_units", type: "number", labelKey: "scrollUnits", hintKey: "scrollUnitsHint", def: 1 },
       { key: "output_guard", type: "boolean", labelKey: "outputGuard", hintKey: "outputGuardHint", def: true },
       { key: "debug", type: "boolean", labelKey: "debug", hintKey: "debugHint", def: false },
+      { key: "tool_mode", type: "select", labelKey: "toolMode", hintKey: "toolModeHint", def: "all", options: "toolMode" },
+      { key: "enabled_tools", type: "list", labelKey: "enabledTools", hintKey: "enabledToolsHint", def: [] },
+      { key: "stop_hotkey", type: "text", labelKey: "stopHotkey", hintKey: "stopHotkeyHint", def: "ctrl+alt+esc" },
+      { key: "takeover_minutes", type: "number", labelKey: "takeoverMinutes", hintKey: "takeoverMinutesHint", def: 30 },
+      { key: "takeover_message", type: "text", labelKey: "takeoverMessage", hintKey: "takeoverMessageHint", def: "" },
     ];
 
     function hasOwn(obj, key) {
@@ -164,6 +201,11 @@ window.__ModuleLoader__.load({
         return Number.isFinite(num) ? { op: "set", value: num } : null;
       }
       if (f.type === "mode") return { op: "set", value: String(text) };
+      if (f.type === "list") {
+        var items = String(text || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+        return items.length ? { op: "set", value: items } : { op: "unset" };
+      }
+      if (f.type === "select") return { op: "set", value: String(text) };
       var str = String(text).trim();
       return str === "" ? { op: "unset" } : { op: "set", value: str };
     }
@@ -220,6 +262,10 @@ window.__ModuleLoader__.load({
             return { checked: false, text: String(d.value), overridden: overridden, cleared: false };
           }
           return { checked: false, text: String(effective(f) ?? ""), overridden: overridden, cleared: false };
+        }
+        if (f.type === "list") {
+          var arr = d ? (d.op === "set" && Array.isArray(d.value) ? d.value : []) : (Array.isArray(effective(f)) ? effective(f) : []);
+          return { checked: false, text: arr.join(", "), overridden: overridden, cleared: cleared };
         }
         var text = d ? (d.op === "set" ? String(d.value) : "") : String(effective(f) ?? "");
         return { checked: false, text: text, overridden: overridden, cleared: cleared };
@@ -335,14 +381,15 @@ window.__ModuleLoader__.load({
           );
         }
         var control;
-        if (f.type === "mode") {
+        if (f.type === "mode" || f.type === "select") {
+          var opts = f.type === "mode" ? MODE_OPTS : TOOL_MODE_OPTS;
           control = h("select", {
             id: id,
             className: "__cu_input",
             value: state.text || f.def,
             disabled: disabled,
             onChange: function (e) { stageText(f, e.target.value); },
-          }, MODE_OPTS.map(function (o) {
+          }, opts.map(function (o) {
             return h("option", { key: o.value, value: o.value }, t(o.labelKey));
           }));
         } else {

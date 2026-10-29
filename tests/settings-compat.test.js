@@ -139,6 +139,6 @@ test('apply(): settings.register throwing does not swallow the tools registered 
   const { ctx, tools, logs } = makeCtx({ settings });
 
   assert.doesNotThrow(() => applyPlugin(ctx, { mode: 'auto' }));
-  assert.equal(tools.length, 10, 'all 10 computer_* tools must still register');
+  assert.equal(tools.length, 19, 'all 19 computer_* tools must still register');
   assert.ok(logs.some(([, msg]) => /settings\.register is not a function/.test(msg)));
 });
