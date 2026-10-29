@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.8 (2026-10-29)
+
+- **`/computer` 在斜杠菜单里显示中文名 + 图标**。宿主的命令注册只收 `name` / `description`，
+  菜单里的图标与本地化标签来自客户端私有表（`hostFace` + `label.*` / `description.*` 字典），
+  插件注入不进去 —— meow-memory 的做法是在客户端直接装饰渲染出来的那一行：`MutationObserver`
+  盯 `[data-trigger-menu]`，按 `button[id^="dsh-slash-option-command-"]` 找到 `dream` 行，
+  把文字换成中文、前面插一个 SVG。这里照同样思路做 `/computer`：显示名「电脑操作」、
+  别名保留 `computer`、描述压成「批准或撤销电脑操作」、前面插光标图标。幂等，菜单每次重渲染
+  都会重新装饰；宿主换 class 时最坏情况是回到原样，不会报错。
+- 测试 78/78。
+
 ## 0.5.7 (2026-10-29)
 
 - **提示条终于能显示**（此前「进程起来了但看不见窗口」，三个叠加的 bug）：

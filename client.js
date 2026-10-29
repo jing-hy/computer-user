@@ -441,9 +441,83 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Slash-menu face for /computer.
+     *
+     * The Host command registry only accepts name + description, and the client
+     * paints built-in commands from a private icon/locale table, so a plugin
+     * cannot declare either. Decorate the rendered row instead: rename it, put
+     * a cursor glyph in front, and keep the description short. Idempotent, and
+     * re-applied whenever the menu re-renders (the Host owns that markup).
+     */
+    var MENU_SELECTOR = "[data-trigger-menu]";
+    var MENU_ROW_PREFIX = "dsh-slash-option-command-";
+    var MENU_LABEL = "电脑操作";
+    var MENU_ALIAS = "computer";
+    var MENU_DESCRIPTION = "批准或撤销电脑操作";
+    var CURSOR_SVG = '<svg viewBox="0 0 512 512" aria-hidden="true" focusable="false"><path fill="currentColor" d="M112 56 416 306 272 322 352 452 296 486 216 356 104 432Z"/></svg>';
+
+    function decorateMenu(menu) {
+      var rows = menu.querySelectorAll('button[id^="' + MENU_ROW_PREFIX + '"]');
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var spans = row.querySelectorAll(":scope > span");
+        var nameSpan = null;
+        var descSpan = null;
+        for (var j = 0; j < spans.length; j++) {
+          var span = spans[j];
+          if (span.hasAttribute("data-cu-command-alias")) {
+            nameSpan = span.previousElementSibling;
+            continue;
+          }
+          if (span.textContent === MENU_ALIAS && nameSpan === null) nameSpan = span;
+          else if ((span.textContent || "").length > 4 && span !== nameSpan) descSpan = span;
+        }
+        if (nameSpan === null) continue;
+        if (nameSpan.textContent === MENU_ALIAS) nameSpan.textContent = MENU_LABEL;
+        if (descSpan !== null && descSpan.textContent !== MENU_DESCRIPTION) descSpan.textContent = MENU_DESCRIPTION;
+        if (row.querySelector("[data-cu-command-alias]") === null) {
+          var alias = document.createElement("span");
+          alias.setAttribute("data-cu-command-alias", "1");
+          alias.textContent = MENU_ALIAS;
+          alias.style.cssText = "opacity:.55;font-size:.9em;margin-left:4px;";
+          nameSpan.parentElement.insertBefore(alias, nameSpan.nextSibling);
+        }
+        var prev = nameSpan.previousElementSibling;
+        if (prev === null || !prev.hasAttribute("data-cu-command-icon")) {
+          var icon = document.createElement("span");
+          icon.setAttribute("data-cu-command-icon", "1");
+          icon.style.cssText = "display:inline-flex;flex:none;width:14px;height:14px;margin-right:6px;align-items:center;justify-content:center;";
+          icon.innerHTML = CURSOR_SVG;
+          nameSpan.parentElement.insertBefore(icon, nameSpan);
+        }
+      }
+    }
+
+    function startMenuFace() {
+      if (typeof document === "undefined" || typeof MutationObserver === "undefined") return;
+      var scheduled = false;
+      function run() {
+        scheduled = false;
+        var menus = document.querySelectorAll(MENU_SELECTOR);
+        for (var i = 0; i < menus.length; i++) {
+          try { decorateMenu(menus[i]); } catch (error) { /* Host-owned markup */ }
+        }
+      }
+      function schedule() {
+        if (scheduled) return;
+        scheduled = true;
+        Promise.resolve().then(run);
+      }
+      var observer = new MutationObserver(schedule);
+      observer.observe(document.body, { childList: true, subtree: true });
+      schedule();
+    }
+
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "computer-user: dictionaries");
+      startMenuFace();
 
       var registered = false;
       function registerCard(scope, reload) {
