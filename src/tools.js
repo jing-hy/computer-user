@@ -626,18 +626,20 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
         foreground = res.foreground;
       } catch { /* best effort */ }
       const cfg = getConfig();
+      // Every value must be JSON-safe: tool results are validated as lossless
+      // JSON, so optional fields are omitted instead of being set to undefined.
       return {
         powershell: probe.powershell,
         edition: probe.edition,
         uia: probe.uia,
-        uia_error: probe.uiaError || undefined,
+        ...(probe.uiaError ? { uia_error: probe.uiaError } : {}),
         temp_writable: probe.tempWritable,
         state_dir: probe.tempDir,
         stopped: typeof isStopped === 'function' ? isStopped() : false,
         mode: cfg.mode,
         tool_mode: cfg.tool_mode || 'all',
         stop_hotkey: cfg.stop_hotkey || 'ctrl+alt+esc',
-        foreground: foreground ? { handle: foreground.handle, title: foreground.title } : undefined,
+        ...(foreground ? { foreground: { handle: foreground.handle, title: foreground.title } } : {}),
       };
     },
   };

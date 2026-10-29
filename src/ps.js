@@ -176,7 +176,11 @@ export function ensureGuard(payload = {}) {
     const child = spawn(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Json', b64],
-      { windowsHide: true, detached: true, stdio: 'ignore' }
+      // NOTE: detached on Windows maps to DETACHED_PROCESS, and a
+      // DETACHED_PROCESS PowerShell exits immediately (measured: the child was
+      // gone within 3 s and wrote no output). Keep it attached; the pill is
+      // meant to live exactly as long as the takeover anyway.
+      { windowsHide: true, detached: false, stdio: 'ignore' }
     );
     child.on('error', (error) => {
       try {

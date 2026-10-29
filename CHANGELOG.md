@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.7 (2026-10-29)
+
+- **提示条终于能显示**（此前「进程起来了但看不见窗口」，三个叠加的 bug）：
+  1. `spawn(..., { detached: true })` 在 Windows 上映射为 `DETACHED_PROCESS`，该模式下的
+     PowerShell 立刻退出（实测 3 秒内消失且无任何输出）→ 改为附着启动。
+  2. tick 里用 `PeekMessage(PM_REMOVE)` 排空队列，把 WPF dispatcher 自己的消息（含它依赖的
+     WM_TIMER）一起吞掉 → dispatcher 饥饿，窗口再也画不出来，timer 只跳一次。改为
+     `HwndSource.AddHook` 接 `WM_HOTKEY`，热键照旧生效，队列不被动。
+  3. `DispatcherTimer` 只存在局部变量里，ShowDialog 阻塞期间被回收 → 提升到脚本作用域。
+  修复后：`MainWindowHandle` 从 0 变成真实值，`guard.desktop.log` 稳定每 1.5 秒一行，切虚拟
+  桌面时 `onCurrent=False` → 重建窗口 → 新窗口 `onCurrent=True`（已实测跟随）。
+- `computer_doctor` 返回值去掉 `undefined` 字段（宿主校验要求 lossless JSON，之前直接报错）。
+- 提示条增加 `guard.debug.log`（start/window-built/timer-started/showdialog-*/tick 1-3），用于
+  下次定位；`/computer` 命令描述缩短为「批准或撤销电脑操作」。
+- 测试 78/78。
+
 ## 0.5.6 (2026-10-29)
 
 - **新增 `computer_stop`**：关闭接管提示条并结束本次接管，**保留**当前批准；`hard: true` 才是

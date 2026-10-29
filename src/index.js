@@ -31,7 +31,7 @@ import { runPs, powerShellScript, isStopped, ensureGuard, stopGuard } from './ps
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.5.6';
+export const version = '0.5.7';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -202,7 +202,7 @@ export function apply(ctx, config) {
     ctx.inject(['commands'], (sctx) => {
       sctx.commands.register({
         name: 'computer',
-        description: '批准当前会话使用 computer-user 的全部工具（手动批准模式下需要）',
+        description: '批准或撤销电脑操作',
         handler: async (invocation) => {
           // /computer 是开关：第一次批准当前会话，再按一次撤销批准。
           const targets = sessionTargetsFromInvocation(invocation);

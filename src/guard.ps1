@@ -60,6 +60,12 @@ try {
     exit 0
   }
 
+  $script:dbgPath = Join-Path $stateDir 'guard.debug.log'
+  function Dbg([string]$m) {
+    try { ((Get-Date).ToString('HH:mm:ss.fff') + ' ' + $m) | Out-File -FilePath $script:dbgPath -Append -Encoding utf8 } catch { }
+  }
+  Dbg 'start'
+
   $hotkey = 'ctrl+alt+esc'
   if ($payload.hotkey) { $hotkey = [string]$payload.hotkey }
   $title = 'DSH is controlling your computer'
@@ -104,6 +110,18 @@ public static class CuGuard {
   public const uint SWP_NOSIZE = 0x0001;
   public const uint SWP_NOACTIVATE = 0x0010;
   public static void Raise(IntPtr h) { SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+  /// Drain pending messages and report how often the stop hotkey fired.
+  /// Done here because PowerShell marshals struct out-parameters unreliably
+  /// and would throw on the second tick, killing the timer.
+  public static int Pump(int hotkeyId) {
+    int hits = 0;
+    MSG msg;
+    int guard = 0;
+    while (guard++ < 64 && PeekMessage(out msg, IntPtr.Zero, 0, 0, 1)) {
+      if (msg.message == 0x0312 && msg.wParam.ToInt64() == hotkeyId) hits++;
+    }
+    return hits;
+  }
 }
 [ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IVirtualDesktopManager {
@@ -177,6 +195,7 @@ public static class CuDesktop {
     $w.Left = [Math]::Round(([System.Windows.SystemParameters]::PrimaryScreenWidth - $w.Width) / 2)
     $w.Top = 6
     $script:currentWindow = $w
+    Dbg ('window-built left=' + $w.Left + ' top=' + $w.Top + ' size=' + $w.Width + 'x' + $w.Height)
     $w.FindName('StopButton').Add_MouseLeftButtonUp({ $script:reason = 'button'; $script:currentWindow.Close() })
     return $w
   }
@@ -205,18 +224,35 @@ public static class CuDesktop {
           startedAt = (Get-Date).ToString('o')
         }
         ($info | ConvertTo-Json -Compress) | Out-File -FilePath (Join-Path $stateDir 'guard.json') -Encoding utf8
+        # WM_HOTKEY arrives on this window's message loop; hooking it keeps the
+        # dispatcher free instead of polling (and stealing) its messages.
+        $src = [System.Windows.Interop.HwndSource]::FromHwnd($script:hwnd)
+        if ($src -ne $null) {
+          $script:hotkeyHook = [System.Windows.Interop.HwndSourceHook]{
+            param($h, $m, $w, $l, [ref]$handled)
+            if ($m -eq 0x0312 -and $w.ToInt64() -eq 0xC0DE) {
+              $script:reason = 'hotkey'
+              if ($script:currentWindow) { $script:currentWindow.Close() }
+            }
+            $handled = $false
+            return [IntPtr]::Zero
+          }
+          $src.AddHook($script:hotkeyHook)
+        }
       } catch { }
     })
 
-    $timer = New-Object System.Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(150)
-    $tick = 0
-    $timer.Add_Tick({
-      $msg = New-Object CuGuard+MSG
-      while ([CuGuard]::PeekMessage([ref]$msg, [IntPtr]::Zero, 0, 0, 1)) {
-        if ($msg.message -eq 0x0312 -and $msg.wParam -eq $script:hotkeyId) { $script:reason = 'hotkey'; $script:currentWindow.Close() }
-      }
+    # Keep the timer in script scope: a PowerShell-local DispatcherTimer is
+    # collected while ShowDialog blocks, and the pill then ticks once and dies.
+    $script:timer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:timer.Interval = [TimeSpan]::FromMilliseconds(150)
+    $script:tick = 0
+    $script:timer.Add_Tick({
+      # Hotkeys arrive through the window hook below. Do NOT drain the Win32
+      # queue here: PeekMessage(PM_REMOVE) swallowed the dispatcher's own
+      # messages, so the pill rendered once and then froze as an invisible window.
       $script:tick = $script:tick + 1
+      if ($script:tick -le 3) { Dbg ('tick ' + $script:tick + ' hwnd=' + $script:hwnd) }
       if ($script:hwnd -and ($script:tick % 10) -eq 0) {
         try {
           $onCurrent = [CuDesktop]::IsOnCurrent($script:hwnd)
@@ -239,15 +275,18 @@ public static class CuDesktop {
       if ($stopAfterMs -gt 0 -and $elapsed -ge $stopAfterMs) { $script:reason = 'self-test'; $script:currentWindow.Close() }
       if ($timeoutMs -gt 0 -and $elapsed -ge $timeoutMs) { $script:reason = 'timeout'; $script:currentWindow.Close() }
     })
-    $timer.Start()
+    $script:timer.Start()
+    Dbg 'timer-started'
 
     if (-not $pidFileWritten) {
       ([int]$PID) | Out-File -FilePath $pidFile -Encoding ascii -Force
       $pidFileWritten = $true
     }
 
+    Dbg 'showdialog-enter'
     [void]$win.ShowDialog()
-    $timer.Stop()
+    Dbg ('showdialog-exit reason=' + $script:reason)
+    $script:timer.Stop()
     if ($script:registered -and $script:hwnd) { [void][CuGuard]::UnregisterHotKey($script:hwnd, $script:hotkeyId) }
 
     if ($script:desktopSwitch) {
