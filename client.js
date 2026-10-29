@@ -455,7 +455,9 @@ window.__ModuleLoader__.load({
     var MENU_LABEL = "电脑操作";
     var MENU_ALIAS = "computer";
     var MENU_DESCRIPTION = "批准或撤销电脑操作";
-    var CURSOR_SVG = '<svg viewBox="0 0 512 512" aria-hidden="true" focusable="false"><path fill="currentColor" d="M112 56 416 306 272 322 352 452 296 486 216 356 104 432Z"/></svg>';
+    // Outline cursor, matching the Host's Regular (hollow) menu glyphs: the shape
+    // is stroked, never filled.
+    var CURSOR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" d="M6 3.2 6 18.4 9.7 14.7 12.1 20.4 14.4 19.4 12 13.7 17.2 13.7Z"/></svg>';
 
     function decorateMenu(menu) {
       var rows = menu.querySelectorAll('button[id^="' + MENU_ROW_PREFIX + '"]');
@@ -487,7 +489,7 @@ window.__ModuleLoader__.load({
         if (prev === null || !prev.hasAttribute("data-cu-command-icon")) {
           var icon = document.createElement("span");
           icon.setAttribute("data-cu-command-icon", "1");
-          icon.style.cssText = "display:inline-flex;flex:none;width:14px;height:14px;margin-right:6px;align-items:center;justify-content:center;";
+          icon.style.cssText = "display:inline-flex;flex:none;width:16px;height:16px;align-items:center;justify-content:center;";
           icon.innerHTML = CURSOR_SVG;
           nameSpan.parentElement.insertBefore(icon, nameSpan);
         }
