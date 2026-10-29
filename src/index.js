@@ -278,4 +278,4 @@ export function apply(ctx, config) {
   }
 }
 
-export default { name, version, inject, apply };
+export default { name, version, inject, Config, apply };
