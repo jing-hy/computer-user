@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.4 (2026-10-29)
+
+- **插件清单展示对齐官方**：新增 `locale/zh.json` / `locale/en.json`（`meta.title` +
+  `meta.description`），中文界面显示「电脑操作」与一句短描述，英文界面显示 Computer Use；
+  `package.json` 增加 `icon: assets/icon.png`（蓝色圆角 + 光标，1.9 KB）并在 `exports` 导出
+  `./locale/*`，宿主 `readPluginMeta` 才能读到。package description 也从长句改为一行。
+- **提示条启动锁**：WPF 加载需要 1–3 秒，连续两次副作用调用会各起一个提示条（能看到旧文案的
+  残影）。`ensureGuard` 现在写 `guard.lock`，5 秒内的第二次调用直接复用，guard 退出时清掉锁。
+- 测试 76/76。
+
 ## 0.5.3 (2026-10-29)
 
 - **修复：切换虚拟桌面后提示条消失**。普通窗口只属于创建它的那个桌面，现在每 1.5 秒用公开接口

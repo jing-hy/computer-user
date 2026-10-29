@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,9 @@ export function runPs(scriptName, payload, { timeoutMs = 25000, signal } = {}) {
 const GUARD_DIR = join(tmpdir(), 'computer-user');
 const GUARD_STOP_FLAG = join(GUARD_DIR, 'stop.flag');
 const GUARD_PID_FILE = join(GUARD_DIR, 'guard.pid');
+const GUARD_LOCK = join(GUARD_DIR, 'guard.lock');
+/** How long a spawn attempt blocks a second one while the pill is still loading. */
+const GUARD_LOCK_MS = 5000;
 
 /** True once the user pressed the stop key (or asked to stop). */
 export function isStopped() {
@@ -134,6 +137,14 @@ export function ensureGuard(payload = {}) {
   const state = guardState();
   if (state.stopped) return false;
   if (state.running) return true;
+  // WPF takes a moment to load, so two rapid tool calls would otherwise each
+  // spawn their own pill. A short-lived lock covers that window.
+  try {
+    const startedAt = existsSync(GUARD_LOCK) ? statSync(GUARD_LOCK).mtimeMs : 0;
+    if (Date.now() - startedAt < GUARD_LOCK_MS) return true;
+    mkdirSync(GUARD_DIR, { recursive: true });
+    writeFileSync(GUARD_LOCK, String(Date.now()), 'utf8');
+  } catch { /* best effort */ }
   clearStop();
   const b64 = Buffer.from(JSON.stringify(payload ?? {}), 'utf8').toString('base64');
   const child = spawn(

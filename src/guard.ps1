@@ -31,6 +31,7 @@ function Stop-Guard([string]$reason) {
   try { ('reason=' + $reason + ' at=' + (Get-Date).ToString('o')) | Out-File -FilePath $stopFlag -Encoding utf8 } catch { }
   try { if (Test-Path $pidFile) { Remove-Item $pidFile -Force } } catch { }
   try { $info = Join-Path $stateDir 'guard.json'; if (Test-Path $info) { Remove-Item $info -Force } } catch { }
+  try { $lock = Join-Path $stateDir 'guard.lock'; if (Test-Path $lock) { Remove-Item $lock -Force } } catch { }
 }
 
 try {

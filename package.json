@@ -1,19 +1,22 @@
 {
   "name": "computer-user",
-  "version": "0.5.3",
-  "description": "Codex-style computer use for DeepSeek Harness (DSH): read the screen and drive the mouse & keyboard. Pairs with picturereader (image_scan/image_ocr) to close the look-act-verify loop. Windows.",
+  "version": "0.5.4",
+  "description": "Codex-style computer use for DeepSeek Harness on Windows: screenshot, UI Automation controls, pointer and keyboard.",
+  "icon": "assets/icon.png",
   "type": "module",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
     "./client": "./client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "scripts",
     "assets",
+    "locale",
     "client.js",
     "cordis.patch.yml",
     "skills",
