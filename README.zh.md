@@ -9,7 +9,7 @@
 [![downloads](https://img.shields.io/npm/dm/computer-user)](https://www.npmjs.com/package/computer-user)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#兼容性)
-[![tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#开发)
+[![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)](#开发)
 
 [English](README.md) | 中文
 
@@ -18,7 +18,8 @@
 </div>
 
 `computer-user` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的一个 bundle，给 agent 提供
-二十个 `computer_*` 工具：截图、UI Automation 控件树、鼠标键盘输入、窗口控制，以及一个带全局停止热键的接管提示条。
+二十一个 `computer_*` 工具：截图、UI Automation 控件树、鼠标键盘输入、窗口控制，以及一个带全局停止热键、
+会跟着你切虚拟桌面的接管提示条。
 
 它就是一个普通 DSH 插件：`package.json` + 一份 `cordis.patch.yml` + 设置卡 + 三个 PowerShell 脚本。
 没有原生插件、没有常驻 daemon、不走 MCP 桥。
@@ -32,7 +33,8 @@
 - **视觉可选。** `computer_screenshot` 返回 PNG 路径：有视觉的模型调 `read_image`，纯文本模型用
   picturereader 的 OCR，而 `computer_snapshot` 完全不看像素、直接按控件名操作。
 - **叫停就停。** agent 接管期间屏幕上方会出现蓝色提示条；按停止热键（默认 `Ctrl+Alt+Esc`）或点按钮
-  会写停止标记，之后任何调用都会明确拒绝，直到用户重新批准。
+  会写停止标记，之后任何调用都会明确拒绝，直到用户重新批准。一段任务结束、暂时不用了，agent 自己也能
+  调 `computer_stop` 把提示条收掉（保留批准，随时可以再来）；提示条还会跟着虚拟桌面切换。
 - **不会点到旧位置。** 元素 id 每次动作都重新解析，截图还可以用 `expected_window` 做前台窗口围栏 ——
   界面变了就直接报错。
 
@@ -75,7 +77,7 @@ computer_screenshot            -> 验证（可传 expected_window 做围栏）
 
 ## 工具
 
-二十个工具，三类。`tool_mode` 可以收敛到 9 个常用工具。
+二十一个工具。`tool_mode` 可以收敛到 9 个常用工具。
 
 | 分组 | 工具 |
 |---|---|
@@ -85,13 +87,22 @@ computer_screenshot            -> 验证（可传 expected_window 做围栏）
 | 窗口 | `computer_activate_window`、`computer_move_window`、`computer_close_window` |
 | 等待 | `computer_wait` —— 固定等待，或等到窗口 / 元素 / 标题出现 |
 | 运行时 | `computer_doctor`、`computer_browser`（只读 CDP 列表）、`computer_set_mode` |
+| 收尾 | `computer_stop` —— 关掉提示条、结束本次接管（保留批准；`hard: true` 才是急停） |
 
-元素 id 形如 `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`，每次动作都重新解析 —— 旧快照里的 locator 会报错，
-而不是点到挪过去的新控件。
+元素 id 形如 `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>|a=<autoId>`，每次动作都重新解析 —— 旧快照里的 locator
+会报错，而不是点到挪过去的新控件。`a=` 是 automation id，优先级高于序号：浅层快照和深层重走之间 `i=`
+会漂移，`a=` 不会。
+
+## 在 DSH 界面里的样子
+
+- 插件清单显示为「电脑操作」+ 蓝色光标图标（`locale/zh.json`、`locale/en.json`、`package.json.icon`）。
+- 斜杠菜单里显示为 `[空心光标] 电脑操作 computer · 批准或撤销电脑操作`。名字和图标是 client 侧装饰出来的
+  —— 宿主的命令 schema 只收 `name` / `description`，图标与本地化标签在官方私有表里，插件注入不进去。
+- 设置卡在「设置 → 电脑操作」。
 
 ## 设置
 
-「设置 → 电脑操作」这张卡写的是插件条目的 Config（所有字段都可热改）。
+这张卡写的是插件条目的 Config（所有字段都可热改）。
 
 | 字段 | 默认 | 作用 |
 |---|---|---|
@@ -152,7 +163,7 @@ Windows 10/11 x64；截图与 UIA 路径在 Windows PowerShell 5.1 上实测。
 ## 开发
 
 ```sh
-node --test                      # 76 项：工具、门禁、提示条、设置卡、入口形状
+node --test                      # 78 项：工具、门禁、提示条、设置卡、入口形状
 ```
 
 布局：`src/index.js`（入口 / 命令 / 输出守卫）、`src/tools.js`（工具面与门禁）、`src/ps.js`（PowerShell 调用 +

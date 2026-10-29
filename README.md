@@ -9,7 +9,7 @@ The agent sees the screen, clicks, types — or drives named controls through UI
 [![downloads](https://img.shields.io/npm/dm/computer-user)](https://www.npmjs.com/package/computer-user)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#compatibility)
-[![tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#development)
+[![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)](#development)
 
 English | [中文](README.zh.md)
 
@@ -18,8 +18,8 @@ English | [中文](README.zh.md)
 </div>
 
 `computer-user` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) bundle that gives an agent
-twenty `computer_*` tools: screenshot, UI Automation tree, pointer and keyboard input, window control, and a
-takeover pill with a global stop key.
+twenty-one `computer_*` tools: screenshot, UI Automation tree, pointer and keyboard input, window control, and a
+takeover pill with a global stop key that follows you across virtual desktops.
 
 It ships as a normal DSH plugin — `package.json`, one `cordis.patch.yml`, a settings card, and three PowerShell
 scripts. No native addon, no daemon process, no MCP bridge.
@@ -33,7 +33,8 @@ scripts. No native addon, no daemon process, no MCP bridge.
 - **Vision optional.** `computer_screenshot` returns a PNG path: vision models call `read_image`, text-only
   models use picturereader OCR, and `computer_snapshot` acts on named controls without any pixels.
 - **Stops when asked.** A blue pill appears while the agent has control; the stop key (default `Ctrl+Alt+Esc`)
-  or its button writes a stop flag that every later call refuses to ignore.
+  or its button writes a stop flag that every later call refuses to ignore. When a task is done the agent can
+  close the pill itself with `computer_stop` (the approval survives), and the pill follows virtual-desktop switches.
 - **Stale-safe.** Element ids are re-resolved on every action, and a screenshot can be fenced on the
   foreground window — a changed UI fails loudly instead of clicking the wrong thing.
 
@@ -77,7 +78,7 @@ returns `virtual_offset` so multi-monitor rigs line up.
 
 ## Tools
 
-Twenty tools, three families. `tool_mode` can trim the set to nine everyday ones.
+Twenty-one tools. `tool_mode` can trim the set to nine everyday ones.
 
 | Group | Tools |
 |---|---|
@@ -87,13 +88,23 @@ Twenty tools, three families. `tool_mode` can trim the set to nine everyday ones
 | Windows | `computer_activate_window`, `computer_move_window`, `computer_close_window` |
 | Timing | `computer_wait` — sleep, or wait until a window / element / title substring appears |
 | Runtime | `computer_doctor`, `computer_browser` (read-only CDP list), `computer_set_mode` |
+| Wrap-up | `computer_stop` — close the pill and end the takeover (approval kept; `hard: true` is a real stop) |
 
-Element ids look like `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>`. They are resolved again on every action,
-so a locator from a stale snapshot errors instead of hitting whatever moved under it.
+Element ids look like `h=<hwnd>|r=<Role>|n=<Name>|i=<nth>|a=<autoId>`. They are resolved again on every
+action, so a locator from a stale snapshot errors instead of hitting whatever moved under it. `a=` is the
+control automation id and outranks the occurrence index, which drifts between a shallow snapshot and a deeper walk.
+
+## How it shows up in DSH
+
+- The plugin inventory shows **Computer Use** with a blue cursor icon (`locale/en.json`, `package.json.icon`).
+- The slash menu shows `[hollow cursor] 电脑操作 computer · 批准或撤销电脑操作`. The label and glyph are
+  decorated client-side: the Host command schema only accepts `name` / `description`, and icons plus localized
+  labels live in a private client table, so a plugin cannot declare them.
+- The settings card lives at Settings → Computer Use.
 
 ## Settings
 
-The card at Settings → Computer Use writes the plugin entry Config (all fields hot-reloadable).
+This card writes the plugin entry Config (all fields hot-reloadable).
 
 | Field | Default | What it does |
 |---|---|---|
@@ -155,7 +166,7 @@ Windows 10/11 x64. The screenshots and UIA paths were verified on Windows PowerS
 ## Development
 
 ```sh
-node --test                      # 76 tests: tools, gates, guard, settings card, entry shape
+node --test                      # 78 tests: tools, gates, guard, settings card, entry shape
 ```
 
 Layout: `src/index.js` (entry, commands, output guard), `src/tools.js` (tool surface and gates),
