@@ -38,9 +38,9 @@ function makeEnv(overrides = {}) {
   return { tools, byName, calls, runPs, getConfig, state, exec, approvedSessions, sessionId, setMode };
 }
 
-test('registers exactly the 20 computer_* tools, side-effecting ones non-concurrency-safe', () => {
+test('registers exactly the 21 computer_* tools, side-effecting ones non-concurrency-safe', () => {
   const { tools } = makeEnv();
-  assert.equal(tools.length, 20);
+  assert.equal(tools.length, 21);
   const readonly = new Set([
     'computer_screenshot',
     'computer_get_cursor_position',
@@ -49,6 +49,7 @@ test('registers exactly the 20 computer_* tools, side-effecting ones non-concurr
     'computer_list_windows',
     'computer_doctor',
     'computer_browser',
+    'computer_stop',
   ]);
   for (const t of tools) {
     assert.match(t.name, /^computer_/);
@@ -79,6 +80,7 @@ test('registers exactly the 20 computer_* tools, side-effecting ones non-concurr
     'computer_set_mode',
     'computer_set_value',
     'computer_snapshot',
+    'computer_stop',
     'computer_type',
     'computer_wait',
   ]);

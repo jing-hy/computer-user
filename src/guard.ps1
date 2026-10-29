@@ -219,7 +219,14 @@ public static class CuDesktop {
       $script:tick = $script:tick + 1
       if ($script:hwnd -and ($script:tick % 10) -eq 0) {
         try {
-          if (-not [CuDesktop]::IsOnCurrent($script:hwnd)) {
+          $onCurrent = [CuDesktop]::IsOnCurrent($script:hwnd)
+          try {
+            $logPath = Join-Path $stateDir 'guard.desktop.log'
+            $line = 'tick=' + $script:tick + ' hwnd=' + $script:hwnd + ' onCurrent=' + $onCurrent + ' at=' + (Get-Date).ToString('HH:mm:ss.fff')
+            $line | Out-File -FilePath $logPath -Append -Encoding utf8
+            if ((Get-Item $logPath).Length -gt 262144) { $line | Out-File -FilePath $logPath -Encoding utf8 }
+          } catch { }
+          if (-not $onCurrent) {
             $script:reason = 'desktop-switch'
             $script:desktopSwitch = $true
             $script:currentWindow.Close()

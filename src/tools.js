@@ -32,6 +32,7 @@ const READONLY_TOOLS = new Set([
   'computer_list_windows',
   'computer_doctor',
   'computer_browser',
+  'computer_stop',
 ]);
 
 /** Tools kept when tool_mode=lite (the ones a normal task needs). */
@@ -123,7 +124,7 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop, fetchJson }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop, stopGuard, fetchJson }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
@@ -691,10 +692,38 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     },
   };
 
+  // -- end the takeover ------------------------------------------------------
+  // Closing the pill is a safety action: it must work without a fresh approval,
+  // otherwise "make this window go away" would require granting more control.
+  const computerStop = {
+    name: 'computer_stop',
+    description: [
+      'Close the takeover pill and end the current takeover, keeping the session approval.',
+      'Call this when you are done with computer use for now: the pill is a status window and should not stay on screen.',
+      'Parameters: hard (optional bool, default false — true also writes the stop flag so later calls refuse until /computer).',
+    ].join(' '),
+    parameters: {
+      type: 'object', additionalProperties: true,
+      properties: { hard: { type: 'boolean', description: 'Also stop hard: later calls are refused until the user approves again.' } },
+      required: [],
+    },
+    output: textOut({ required: ['stopped'] }),
+    isConcurrencySafe: () => true,
+    async execute(args, _exec) {
+      const hard = args?.hard === true;
+      let result = { killed: false, hard };
+      if (typeof stopGuard === 'function') {
+        try { result = stopGuard({ hard }); } catch { /* best effort */ }
+      }
+      return { stopped: true, ...result };
+    },
+  };
+
   const tools = [
     computerScreenshot,
     computerSnapshot,
     computerBrowser,
+    computerStop,
     computerClick,
     computerInvoke,
     computerSetValue,

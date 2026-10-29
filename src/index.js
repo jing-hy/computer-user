@@ -27,11 +27,11 @@
 
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
-import { runPs, powerShellScript, isStopped, ensureGuard } from './ps.js';
+import { runPs, powerShellScript, isStopped, ensureGuard, stopGuard } from './ps.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.5.5';
+export const version = '0.5.6';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -132,7 +132,7 @@ export function apply(ctx, config) {
   // wiring below) alive.
   ctx.effect(() => {
     const disposers = [];
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m), isStopped, ensureGuard })) {
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m), isStopped, ensureGuard, stopGuard })) {
       try {
         disposers.push(ctx.tools.register({
           ...tool,
@@ -143,7 +143,7 @@ export function apply(ctx, config) {
               exec?.agent?.session?.header?.sessionId,
               exec?.sessionId,
             ].filter(Boolean).map(String))];
-            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m), isStopped, ensureGuard });
+            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m), isStopped, ensureGuard, stopGuard });
             const realTool = tools.find((t) => t.name === tool.name);
             return realTool.execute(args, exec);
           },

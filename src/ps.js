@@ -114,6 +114,30 @@ export function clearStop() {
   try { rmSync(GUARD_STOP_FLAG, { force: true }); } catch { /* best effort */ }
 }
 
+/**
+ * Close the takeover pill now, without revoking the session approval.
+ * Closing the window is a safety action, so callers may invoke it without a
+ * separate approval; `hard` additionally writes the stop flag (a real stop).
+ * @param {{hard?:boolean}} [options]
+ * @returns {{killed:boolean, hard:boolean}}
+ */
+export function stopGuard({ hard = false } = {}) {
+  let killed = false;
+  try {
+    const raw = readFileSync(GUARD_PID_FILE, 'utf8').trim();
+    const pid = Number(raw);
+    if (Number.isFinite(pid) && pid > 0) {
+      try { process.kill(pid); killed = true; } catch { /* already gone */ }
+    }
+  } catch { /* no pid file */ }
+  try { rmSync(GUARD_PID_FILE, { force: true }); } catch { /* best effort */ }
+  try { rmSync(join(GUARD_DIR, 'guard.json'), { force: true }); } catch { /* best effort */ }
+  try { rmSync(GUARD_LOCK, { force: true }); } catch { /* best effort */ }
+  if (hard) requestStop('tool');
+  else clearStop();
+  return { killed, hard };
+}
+
 /** Read whether the pill process is alive and whether a stop is pending. */
 export function guardState() {
   let running = false;

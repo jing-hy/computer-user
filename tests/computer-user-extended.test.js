@@ -26,6 +26,7 @@ function makeEnv(opts = {}) {
     isStopped: opts.isStopped ?? (() => false),
     ensureGuard: opts.ensureGuard ?? ((payload) => { guards.push(payload); return true; }),
     fetchJson: opts.fetchJson,
+    stopGuard: opts.stopGuard ?? ((o) => { guards.push({ stop: o }); return { killed: false, hard: !!(o && o.hard) }; }),
   });
   const byName = (n) => tools.find((x) => x.name === n);
   return { tools, byName, calls, guards, state };
@@ -192,4 +193,18 @@ test('observation stays open in manual mode by default', async () => {
   const env = makeEnv({ cfg: { mode: 'manual' } });
   const res = await env.byName('computer_screenshot').execute({}, {});
   assert.ok(res && typeof res === 'object');
+});
+
+test('computer_stop closes the pill without needing approval', async () => {
+  const env = makeEnv({ cfg: { mode: 'manual' } });
+  const res = await env.byName('computer_stop').execute({}, {});
+  assert.equal(res.stopped, true);
+  assert.equal(env.guards.filter((g) => g && g.stop).length, 1);
+});
+
+test('computer_stop hard=true forwards the hard flag', async () => {
+  const env = makeEnv({ cfg: { mode: 'manual' } });
+  const res = await env.byName('computer_stop').execute({ hard: true }, {});
+  assert.equal(res.hard, true);
+  assert.equal(env.guards.filter((g) => g && g.stop && g.stop.hard).length, 1);
 });
