@@ -45,6 +45,22 @@ test('tool_mode=custom honours enabled_tools', () => {
   assert.deepEqual(env.tools.map((t) => t.name).sort(), ['computer_screenshot', 'computer_snapshot']);
 });
 
+test('issue #4 regression: all returned tools have string descriptions in every tool_mode', () => {
+  for (const cfg of [
+    { tool_mode: 'all' },
+    { tool_mode: 'lite' },
+    { tool_mode: 'custom', enabled_tools: ['computer_click', 'computer_type'] },
+    { tool_mode: 'custom', enabled_tools: [] },
+  ]) {
+    const env = makeEnv({ cfg });
+    assert.ok(env.tools.length > 0);
+    for (const t of env.tools) {
+      assert.equal(typeof t.description, 'string', `${cfg.tool_mode}:${t.name} description must be a string`);
+      assert.ok(t.description.length > 0, `${cfg.tool_mode}:${t.name} description must be non-empty`);
+    }
+  }
+});
+
 test('snapshot shortens locators but keeps them replayable', async () => {
   const env = makeEnv({
     runPs: async (script, payload) => {
