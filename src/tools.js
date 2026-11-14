@@ -35,6 +35,13 @@ const READONLY_TOOLS = new Set([
   'computer_stop',
 ]);
 
+/**
+ * Tools that stay callable while a stop is latched: computer_doctor only reads
+ * the runtime, and it is the one tool that can tell the user *why* everything
+ * else refuses (issue #7). Everything else, read-only or not, keeps refusing.
+ */
+const STOP_EXEMPT_TOOLS = new Set(['computer_doctor']);
+
 /** Tools kept when tool_mode=lite (the ones a normal task needs). */
 const LITE_TOOLS = new Set([
   'computer_screenshot',
@@ -124,7 +131,7 @@ function textOut(schema, prefixLines) {
   };
 }
 
-export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, ensureGuard, requestStop, stopGuard, fetchJson }) {
+export function createComputerTools({ runPs, getConfig, approvedSessions, sessionId, sessionIds, setMode, isStopped, stopReason, ensureGuard, requestStop, stopGuard, fetchJson }) {
   if (typeof runPs !== 'function') throw new Error('computer-user: runPs is required');
   if (typeof getConfig !== 'function') throw new Error('computer-user: getConfig is required');
 
@@ -133,15 +140,35 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     : sessionId
       ? [sessionId]
       : [];
+  // The stop flag stores its own reason; a timeout must not be reported as
+  // "the user pressed the stop hotkey" (issue #7).
+  const readReason = () => {
+    try {
+      return typeof stopReason === 'function' ? String(stopReason() || '') : '';
+    } catch { return ''; }
+  };
   const stoppedError = () => {
-    const e = new Error('computer-user 已急停：用户按下了停止热键（或点了停止按钮）。请让用户确认后重新 /computer 批准，或重启会话。');
+    const reason = readReason();
+    const why = {
+      timeout: '接管窗口已超时自动急停（takeover_minutes 到点，无人按停止键）',
+      hotkey: '用户按下了停止热键',
+      button: '用户点了提示条上的「停止」按钮',
+      tool: '调用了 computer_stop 硬停止',
+      external: '收到外部停止请求',
+      selftest: '自检触发了急停',
+      error: '提示条进程异常退出',
+    }[reason] || '急停标记仍在（%TEMP%\\computer-user\\stop.flag）';
+    const e = new Error(
+      `computer-user 已急停：${why}。在对话框输入 /computer 即可清除急停标记并恢复（已批准的会话会直接恢复，无需再按一次），或重启会话。`
+    );
     e.stopped = true;
+    if (reason) e.stopReason = reason;
     return e;
   };
   // Every tool call passes this gate: mode → stop flag → takeover pill.
   const gate = (toolName) => {
     modeGate(getConfig(), toolName, approvedSessions, approvalIds);
-    if (typeof isStopped === 'function' && isStopped()) throw stoppedError();
+    if (typeof isStopped === 'function' && isStopped() && !STOP_EXEMPT_TOOLS.has(toolName)) throw stoppedError();
     if (!READONLY_TOOLS.has(toolName) && typeof ensureGuard === 'function') {
       const cfg = getConfig();
       try {
@@ -583,10 +610,24 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       gate(name);
-      const payload = { action: 'window', kind, handle: Number(args.window) };
+      const hwnd = Number(args.window);
+      if (!Number.isFinite(hwnd)) {
+        throw new Error(`computer-user ${name}: window 必须是 computer_list_windows 返回的数字 hwnd`);
+      }
+      const payload = { action: 'window', kind, handle: hwnd };
       if (kind === 'move') payload.rect = args.rect;
       const res = await runPs('observe.ps1', payload, { signal: exec?.signal, timeoutMs: 15000 });
-      return { action: res.action, handle: res.handle, rect: res.rect };
+      if (res && res.ok === false) throw new Error(`computer-user ${name}: ${res.error || '窗口操作失败'}`);
+      // Tool results are validated as lossless JSON: activate/close return no
+      // rect, and an explicit `rect: undefined` makes the host reject the whole
+      // result ("value is not lossless JSON", issue #6). Only advertise keys the
+      // backend actually returned.
+      const out = {
+        action: (res && res.action) || kind,
+        handle: res && res.handle != null ? res.handle : hwnd,
+      };
+      if (res && res.rect != null) out.rect = res.rect;
+      return out;
     },
   });
 

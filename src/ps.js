@@ -109,6 +109,15 @@ export function requestStop(reason = 'agent') {
   } catch { /* best effort */ }
 }
 
+/** Read the stop flag's reason ('hotkey' | 'button' | 'timeout' | ...), or null when nothing is latched. */
+export function stopReason() {
+  try {
+    const raw = readFileSync(GUARD_STOP_FLAG, 'utf8');
+    const m = /reason=([^\s]+)/.exec(raw);
+    return m ? m[1] : 'unknown';
+  } catch { return null; }
+}
+
 /** Clear the stop flag (a new approval starts a fresh takeover). */
 export function clearStop() {
   try { rmSync(GUARD_STOP_FLAG, { force: true }); } catch { /* best effort */ }

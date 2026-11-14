@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.10 (2026-11-14)
+
+- **修 #6：`computer_activate_window` 报 `returned invalid output: value is not lossless JSON`。**
+  `makeWindowTool` 统一返回 `{ action, handle, rect: res.rect }`，但 `activate` / `close` 的后端
+  （`observe.ps1`）只回 `{ ok, action, handle }`，缺 `rect` → 结果对象带一个显式 `undefined` 属性，
+  宿主按「无损 JSON」校验拒收。改为只写后端真实返回的键（`rect` 存在才加），`handle` 缺失时回落到入参
+  hwnd；`ok: false` 时抛出后端错误文案而不是返回空结果；非数字 hwnd 提前拒绝。
+  实测（本机 Win11 + 真实窗口）：`activate` 返回 `{"ok":true,"handle":67410,"action":"activate"}`，无 `rect` 键。
+- **修 #7：超时急停后 `/computer` 清不掉标记，只读工具也被一并封死。**
+  1. `/computer` 批准成功时调用 `clearStop()` 真正删除 `stop.flag`（此前只写内存里的批准集合，
+     标记仍在，gate 先看标记再看批准，于是批准形同虚设）。
+  2. 超时后会话通常仍是「已批准」状态，按开关语义 `/computer` 会变成撤销 → 新增
+     `planCommandAction()`：**标记存在且已批准 = 恢复**，一键回到可用状态，不用连按两次。
+  3. 急停文案读取标记里的 `reason`，区分「接管超时自动急停」/「用户按了停止热键」/「点了 Stop 按钮」等，
+     不再把超时误报成用户按键。
+  4. `computer_doctor` 在急停期间仍然可用（只读自检，不碰输入），否则用户连「为什么全被拒」都查不出来。
+- 测试 78 → **88/88**（新增 `tests/stop-and-window.test.js`：describe 形状、move 保留 rect、
+  后端失败抛错、非数字 hwnd、超时/热键文案、doctor 豁免、标记清除后恢复、/computer 恢复语义）。
+
 ## 0.5.9 (2026-10-29)
 
 - 斜杠菜单图标改成**空心描边**（`fill:none` + `stroke:currentColor`，1.6 描边、圆角接头），

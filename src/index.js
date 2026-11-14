@@ -27,11 +27,11 @@
 
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
-import { runPs, powerShellScript, isStopped, ensureGuard, stopGuard } from './ps.js';
+import { runPs, powerShellScript, isStopped, stopReason, clearStop, ensureGuard, stopGuard } from './ps.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.5.9';
+export const version = '0.5.10';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -60,6 +60,20 @@ export function sessionTargetsFromInvocation(invocation) {
   } catch { /* ignore */ }
   if (targets.size === 0) targets.add('__global__');
   return targets;
+}
+
+/**
+ * Decide what /computer does for the current invocation.
+ *
+ * A latched stop flag wins over the toggle: after a timeout stop the session is
+ * usually still approved, so a plain toggle would revoke instead of resuming and
+ * the user would have to press /computer twice to get back to a working state
+ * (issue #7).
+ * @param {{stopped:boolean, approved:boolean}} state
+ * @returns {'resume'|'toggle'}
+ */
+export function planCommandAction({ stopped, approved }) {
+  return stopped && approved ? 'resume' : 'toggle';
 }
 
 /**
@@ -132,7 +146,7 @@ export function apply(ctx, config) {
   // wiring below) alive.
   ctx.effect(() => {
     const disposers = [];
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m), isStopped, ensureGuard, stopGuard })) {
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m), isStopped, stopReason, ensureGuard, stopGuard })) {
       try {
         disposers.push(ctx.tools.register({
           ...tool,
@@ -143,7 +157,7 @@ export function apply(ctx, config) {
               exec?.agent?.session?.header?.sessionId,
               exec?.sessionId,
             ].filter(Boolean).map(String))];
-            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m), isStopped, ensureGuard, stopGuard });
+            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m), isStopped, stopReason, ensureGuard, stopGuard });
             const realTool = tools.find((t) => t.name === tool.name);
             return realTool.execute(args, exec);
           },
@@ -205,9 +219,19 @@ export function apply(ctx, config) {
         description: '批准或撤销电脑操作',
         handler: async (invocation) => {
           // /computer 是开关：第一次批准当前会话，再按一次撤销批准。
+          // 但急停标记（stop.flag）存在时按 /computer 必须表示「恢复」：超时自动急停
+          // 之后会话往往仍处于已批准状态，若按开关语义会变成撤销，用户得连按两次
+          // 才回到可用状态（issue #7）。所以先清标记，再按批准结果回话。
           const targets = sessionTargetsFromInvocation(invocation);
-          const { approved } = toggleApproval(approvedSessions, targets);
           const ids = [...targets].join(', ');
+          const wasStopped = isStopped();
+          const wasApproved = [...targets].some((t) => approvedSessions.has(t));
+          if (planCommandAction({ stopped: wasStopped, approved: wasApproved }) === 'resume') {
+            clearStop();
+            return { kind: 'success', text: `✅ 已恢复：已清除急停标记，computer-user 全部工具在当前会话重新可用（${ids}）。` };
+          }
+          const { approved } = toggleApproval(approvedSessions, targets);
+          if (approved) clearStop();
           return approved
             ? { kind: 'success', text: `✅ 已批准：computer-user 全部工具在当前会话可用（${ids}）。后续轮次持续生效；再按 /computer 可撤销。` }
             : { kind: 'success', text: `🔒 已撤销批准：computer-user 有副作用工具需重新 /computer 批准（${ids}）。` };

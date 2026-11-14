@@ -130,8 +130,10 @@ This card writes the plugin entry Config (all fields hot-reloadable).
 - **Session approval.** In `manual`, side-effecting tools refuse until the user types `/computer` in that
   session; typing it again revokes the approval.
 - **Takeover pill and stop key.** Any side-effecting call raises the pill. The hotkey, the pill button, or a
-  timeout writes a stop flag; every later call fails with an explicit "stopped" error until the user approves
-  again. The pill is its own process, so the key lands even while the input backend is busy.
+  timeout writes a stop flag; every later call except `computer_doctor` then fails with an explicit "stopped"
+  error that names the actual cause (timeout vs. hotkey). Typing `/computer` once clears the flag and resumes —
+  an already approved session comes straight back, no revoke-then-approve dance. The pill is its own process,
+  so the key lands even while the input backend is busy.
 - **Observation gating (optional).** `approve_observe` extends the approval requirement to screenshots and
   UI snapshots, for setups where looking at the screen is itself sensitive. Off by default.
 - **Stale rejection.** Locator resolution and the optional `expected_window` fence.
