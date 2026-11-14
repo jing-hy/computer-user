@@ -1,3 +1,6 @@
+> **Windows 专用构建 / Windows-only build** — generated from `main` by scripts/crop-platform.mjs; this branch carries a single-platform backend only (main is the dual-platform line).
+> Source commit: e4e9599ae0869f40823574894ce7ec1874eab90c
+
 <div align="center">
 
 # computer-user

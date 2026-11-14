@@ -16,7 +16,7 @@
  */
 
 import * as windows from './ps.js';
-import { darwinBackend } from './platform/darwin/index.js';
+
 
 /**
  * Pick a backend for a platform string.
@@ -34,7 +34,6 @@ export function selectBackend(platform = process.platform) {
       scripts: { capture: 'capture.ps1', input: 'input.ps1', observe: 'observe.ps1', guard: 'guard.ps1' },
     };
   }
-  if (platform === 'darwin') return { ...darwinBackend, id: 'darwin', platform: 'darwin' };
   throw new Error(
     'computer-user 仅支持 Windows 与 macOS（当前平台 ' + platform + '）。' +
       'Linux 等平台还没有后端，详见 docs/mac-backend.md。'

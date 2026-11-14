@@ -1,0 +1,30 @@
+{
+  "platform": "win32",
+  "sourceCommit": "e4e9599ae0869f40823574894ce7ec1874eab90c",
+  "createdAt": "2026-11-14T13:33:10.335Z",
+  "removed": [
+    "src/platform/darwin/capture.js",
+    "src/platform/darwin/exec.js",
+    "src/platform/darwin/guard.js",
+    "src/platform/darwin/index.js",
+    "src/platform/darwin/input.js",
+    "src/platform/darwin/jxa/pill.js",
+    "src/platform/darwin/keys.js",
+    "src/platform/darwin/observe.js",
+    "src/platform/darwin/paths.js",
+    "src/platform/darwin/png.js",
+    "src/platform/darwin/unsupported.js",
+    "tests/darwin/capture.test.js",
+    "tests/darwin/guard.test.js",
+    "tests/darwin/input.test.js",
+    "tests/darwin/keys.test.js",
+    "tests/darwin/observe.test.js",
+    "tests/darwin/png.test.js",
+    "tests/platform/crop.test.js",
+    "tests/shared/backend-select.test.js",
+    "tests/shared/contract.test.js"
+  ],
+  "packageOs": [
+    "win32"
+  ]
+}
