@@ -27,11 +27,11 @@
 
 import { NS, Config } from './config.js';
 import { createComputerTools } from './tools.js';
-import { runPs, powerShellScript, isStopped, stopReason, clearStop, ensureGuard, stopGuard } from './ps.js';
+import backend, { runPs, isStopped, stopReason, clearStop, ensureGuard, stopGuard } from './backend.js';
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.5.10';
+export const version = '0.6.0';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -298,7 +298,10 @@ export function apply(ctx, config) {
 
   // ── debug helper ──
   if (config?.debug) {
-    ctx.logger?.info?.(`[computer-user] scripts: ${powerShellScript('capture.ps1')}, ${powerShellScript('input.ps1')}`);
+    const where = backend.id === 'windows' && typeof backend.powerShellScript === 'function'
+      ? backend.powerShellScript('capture.ps1') + ', ' + backend.powerShellScript('input.ps1')
+      : 'macOS 原生后端（screencapture / osascript / cliclick）';
+    ctx.logger?.info?.(`[computer-user] backend: ${backend.id} — ${where}`);
   }
 }
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createComputerTools } from '../src/tools.js';
-import { planCommandAction } from '../src/index.js';
+import { createComputerTools } from '../../src/tools.js';
+import { planCommandAction } from '../../src/index.js';
 
 function makeEnv(opts = {}) {
   const calls = [];

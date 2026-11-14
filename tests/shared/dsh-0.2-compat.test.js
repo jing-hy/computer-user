@@ -13,7 +13,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apply as applyPlugin, guardStream } from '../src/index.js';
+import { apply as applyPlugin, guardStream } from '../../src/index.js';
 
 function makeCtx({ settings, commands } = {}) {
   const tools = [];

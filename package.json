@@ -1,7 +1,7 @@
 {
   "name": "computer-user",
-  "version": "0.5.10",
-  "description": "Codex-style computer use for DeepSeek Harness on Windows: screenshot, UI Automation controls, pointer and keyboard.",
+  "version": "0.6.0",
+  "description": "Codex-style computer use for DeepSeek Harness: screenshot, UI Automation controls (Windows), pointer and keyboard. Experimental macOS backend.",
   "icon": "assets/icon.png",
   "type": "module",
   "main": "src/index.js",
@@ -49,7 +49,8 @@
     "node": "^22.19 || >=24"
   },
   "os": [
-    "win32"
+    "win32",
+    "darwin"
   ],
   "dsh": {
     "bundle": {

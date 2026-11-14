@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createComputerTools } from '../src/tools.js';
-import { sessionTargetsFromInvocation, toggleApproval } from '../src/index.js';
+import { createComputerTools } from '../../src/tools.js';
+import { sessionTargetsFromInvocation, toggleApproval } from '../../src/index.js';
 
 function makeEnv(overrides = {}) {
   const calls = [];

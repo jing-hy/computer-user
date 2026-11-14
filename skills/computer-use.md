@@ -1,13 +1,21 @@
 # Computer Use（电脑操作）—— 读屏 + 操作鼠标键盘（纯本地，不调用外部 API）
 
-computer-user 插件提供 9 个 `computer_*` 工具，让纯文本模型像人手一样操作本机
-Windows 桌面：读屏 → 定位目标 → 点击/输入/按键/滚动/拖拽 → 截图验证。与
+computer-user 插件提供 21 个 `computer_*` 工具，让纯文本模型像人手一样操作本机
+桌面：读屏 → 定位目标 → 点击/输入/按键/滚动/拖拽 → 截图验证。与
 picturereader 配合构成「看 → 想 → 做 → 验」闭环。
+
+Windows 上是完整实现（含 UIA 控件树）。**macOS 是实验性后端**：支持截图、鼠标、键盘、
+滚动、窗口列表/前台/激活、条件等待、接管提示条；**不支持**控件树与窗口移动/关闭。
+在 macOS 上请一律走「截图 + 坐标点击」，不要调用 `computer_snapshot` / `computer_invoke` /
+`computer_set_value` / `computer_focus` / `computer_move_window` / `computer_close_window`
+（它们会返回明确的不支持错误）。macOS 上鼠标操作需要 `brew install cliclick`，
+并且要给 DSH 授权「屏幕录制」+「辅助功能」。
 
 > **重要**：本方案**全程纯本地、绝不调用任何外部 API**。读屏用 computer-user 的
 > `computer_screenshot`（本地 PowerShell 截图），看屏用 picturereader 的
 > `image_scan` / `image_ocr` / `image_crop` / `image_compare`（本地像素分析 + 本机
-> OCR 引擎 windows / paddle / rapid），操作用 `computer_*`（本地 Win32 SendInput）。
+> OCR 引擎 windows / paddle / rapid），操作用 `computer_*`（本地输入后端：Windows SendInput；
+> macOS cliclick + AppleScript）。
 > 没有任何图像、坐标、页面元素会发往云端。隐私模式 = picturereader 的
 > `mode: privacy` + computer-user 任选模式（推荐「手动批准」）。
 

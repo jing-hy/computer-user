@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectFakeToolText, createOutputGuard } from '../src/output-guard.js';
+import { detectFakeToolText, createOutputGuard } from '../../src/output-guard.js';
 
 test('detectFakeToolText: pseudo invoke XML is detected', () => {
   assert.ok(detectFakeToolText('<invoke name="computer_click">'));

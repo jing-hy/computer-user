@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createComputerTools } from '../src/tools.js';
+import { createComputerTools } from '../../src/tools.js';
 
 function makeEnv(opts = {}) {
   const calls = [];

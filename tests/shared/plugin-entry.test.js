@@ -11,7 +11,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import entry, { Config } from '../src/index.js';
+import entry, { Config } from '../../src/index.js';
 
 test('default export carries Config for the cordis loader', () => {
   assert.equal(entry.Config, Config, 'entry.fiber.runtime.Config must resolve');

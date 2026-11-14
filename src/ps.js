@@ -1,8 +1,22 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import {
+  GUARD_DIR,
+  GUARD_LOCK,
+  GUARD_LOCK_MS,
+  GUARD_PID_FILE,
+  clearStop,
+  guardState,
+  isStopped,
+  requestStop,
+  stopReason,
+} from './stop-flag.js';
+
+// The stop latch is shared with the macOS backend (see stop-flag.js). Re-export
+// it so every existing `import … from './ps.js'` keeps working unchanged.
+export { clearStop, guardState, isStopped, requestStop, stopReason };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,44 +98,11 @@ export function runPs(scriptName, payload, { timeoutMs = 25000, signal } = {}) {
   });
 }
 
-// ── takeover guard: pill window + global stop key ─────────────────────────
+// ── takeover guard: pill window + global stop key (Windows) ───────────────
 // The pill runs as its own process so the stop key still lands while the input
 // backend is busy. It writes a stop flag that every computer_* call checks
 // before acting, which is what makes "press the key and it actually stops" true.
-
-const GUARD_DIR = join(tmpdir(), 'computer-user');
-const GUARD_STOP_FLAG = join(GUARD_DIR, 'stop.flag');
-const GUARD_PID_FILE = join(GUARD_DIR, 'guard.pid');
-const GUARD_LOCK = join(GUARD_DIR, 'guard.lock');
-/** How long a spawn attempt blocks a second one while the pill is still loading. */
-const GUARD_LOCK_MS = 5000;
-
-/** True once the user pressed the stop key (or asked to stop). */
-export function isStopped() {
-  return existsSync(GUARD_STOP_FLAG);
-}
-
-/** Write the stop flag so subsequent calls refuse to act. */
-export function requestStop(reason = 'agent') {
-  try {
-    mkdirSync(GUARD_DIR, { recursive: true });
-    writeFileSync(GUARD_STOP_FLAG, 'reason=' + reason + ' at=' + new Date().toISOString(), 'utf8');
-  } catch { /* best effort */ }
-}
-
-/** Read the stop flag's reason ('hotkey' | 'button' | 'timeout' | ...), or null when nothing is latched. */
-export function stopReason() {
-  try {
-    const raw = readFileSync(GUARD_STOP_FLAG, 'utf8');
-    const m = /reason=([^\s]+)/.exec(raw);
-    return m ? m[1] : 'unknown';
-  } catch { return null; }
-}
-
-/** Clear the stop flag (a new approval starts a fresh takeover). */
-export function clearStop() {
-  try { rmSync(GUARD_STOP_FLAG, { force: true }); } catch { /* best effort */ }
-}
+// The latch itself lives in stop-flag.js and is shared with the macOS backend.
 
 /**
  * Close the takeover pill now, without revoking the session approval.
@@ -145,20 +126,6 @@ export function stopGuard({ hard = false } = {}) {
   if (hard) requestStop('tool');
   else clearStop();
   return { killed, hard };
-}
-
-/** Read whether the pill process is alive and whether a stop is pending. */
-export function guardState() {
-  let running = false;
-  let pid;
-  try {
-    const raw = readFileSync(GUARD_PID_FILE, 'utf8').trim();
-    pid = Number(raw);
-    if (Number.isFinite(pid) && pid > 0) {
-      try { process.kill(pid, 0); running = true; } catch { running = false; }
-    }
-  } catch { /* no pid file */ }
-  return { running, pid, stopped: isStopped(), stateDir: GUARD_DIR };
 }
 
 /**

@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+const client = readFileSync(new URL('../../client.js', import.meta.url), 'utf8');
 
 test('settings card uses the official settings-form tokens', () => {
   assert.ok(client.includes('var(--dsw-radius-md)'), 'inputs and button use --dsw-radius-md');

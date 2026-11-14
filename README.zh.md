@@ -2,14 +2,14 @@
 
 # computer-user
 
-**给 DeepSeek Harness 的 Windows 电脑操控插件（Codex 风格）。**
-模型能看屏幕、点鼠标、敲键盘 —— 也能直接按名字操作 UI Automation 控件。没有 sidecar，不需要编译原生模块。
+**给 DeepSeek Harness 的电脑操控插件（Codex 风格）。**
+Windows 上是完整实现：看屏幕、点鼠标、敲键盘，也能按名字操作 UI Automation 控件；macOS 是实验性后端（截图/键鼠/窗口/提示条，暂不含控件树）。没有 sidecar，不需要编译原生模块。
 
 [![npm](https://img.shields.io/npm/v/computer-user?color=blue)](https://www.npmjs.com/package/computer-user)
 [![downloads](https://img.shields.io/npm/dm/computer-user)](https://www.npmjs.com/package/computer-user)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#兼容性)
-[![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)](#开发)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20(experimental)-0078D4)](#平台支持)
+[![tests](https://img.shields.io/badge/tests-160%20passing-brightgreen)](#开发)
 
 [English](README.md) | 中文
 
@@ -21,8 +21,32 @@
 二十一个 `computer_*` 工具：截图、UI Automation 控件树、鼠标键盘输入、窗口控制，以及一个带全局停止热键、
 会跟着你切虚拟桌面的接管提示条。
 
-它就是一个普通 DSH 插件：`package.json` + 一份 `cordis.patch.yml` + 设置卡 + 三个 PowerShell 脚本。
+它就是一个普通 DSH 插件：`package.json` + 一份 `cordis.patch.yml` + 设置卡，后端按平台切换
+（Windows：四个 PowerShell 脚本；macOS：系统自带 `screencapture` / `osascript` + 可选的 `cliclick`）。
 没有原生插件、没有常驻 daemon、不走 MCP 桥。
+
+## 平台支持
+
+| 能力 | Windows 10/11 | macOS（实验性） |
+|---|---|---|
+| 截图（全屏 / region / 缩放） | ✅ 多屏虚拟原点 | ✅ 仅主屏；Retina 自动折算成「点」 |
+| 鼠标 点击 / 移动 / 拖拽 / 滚动 / 取位 | ✅ | ✅（指针操作需 `brew install cliclick`） |
+| 键盘 组合键 / 中英文输入 | ✅ | ✅（AppleScript `keystroke`，unicode 可用） |
+| 窗口 列表 / 前台 / 激活 | ✅ | ✅（`CGWindowList`） |
+| 窗口 移动 / 关闭 | ✅ | ❌ 明确报错（需 AX API） |
+| 控件树 `snapshot` / `invoke` / `set_value` / `focus` | ✅ UIA | ❌ 明确报错（需 AX API + 授权） |
+| 条件等待 `computer_wait` | ✅ | ✅ |
+| 接管提示条 + 停止按钮 + 超时急停 | ✅ WPF | ✅ JXA/AppKit 浮窗（点提示条任意处即停止） |
+| 全局停止**热键** | ✅ | ⚠️ 默认关闭（`CGEventTap` 需真机验证，见 `docs/mac-backend.md`） |
+
+macOS 首次使用需要在「系统设置 → 隐私与安全性」里给宿主应用（DSH）授权：
+
+1. **屏幕录制** —— 否则 `screencapture` 拿不到画面；
+2. **辅助功能** —— 否则键鼠事件被丢弃、窗口信息读不全；
+3. （可选）**输入监控** —— 只有启用全局停止热键时才需要。
+
+授权后重启 DSH 生效。`computer_doctor` 会报告当前后端、macOS 版本、`screencapture` / `osascript` / `cliclick`
+是否就位，以及 `dpr_unverified`（Retina 折算是否已确认）。
 
 ## 为什么选这个
 

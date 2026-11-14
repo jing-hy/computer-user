@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.0 (2026-11-14)
+
+**平台后端抽象 + 实验性 macOS 后端。Windows 行为无变更。**
+
+- **后端门禁（`src/backend.js`）**：一个 `if (platform)` 决定用哪个后端 —— `win32` → 现有 PowerShell 实现，
+  `darwin` → 新的 macOS 实现，其它平台在选择阶段就明确报错。`src/tools.js`（21 个工具）、设置、`/computer`、
+  输出守卫**一行没改**；`src/ps.js` 与四个 `.ps1` 文件位置和内容保持不变。
+- **急停状态抽成 `src/stop-flag.js`**（跨平台，两个后端共用）：`isStopped / requestStop / stopReason /
+  clearStop / guardState`。`ps.js` 改为 re-export，对外 API 不变；0.5.10 修的「超时后 /computer 恢复」
+  语义因此在两个平台都成立。
+- **macOS 后端（实验性，`src/platform/darwin/`）**：
+  - 截图：`screencapture` + `sips`，用 PNG 头 + `NSScreen.backingScaleFactor` 把物理像素折算回「点」，
+    保证「看图给的坐标 = 点击用的坐标」不会差 2 倍（v1 只截主屏）。
+  - 指针：`cliclick`（`brew install cliclick`）；键盘：AppleScript `keystroke`/`key code`（中文可用）；
+    滚动：JXA `CGEventCreateScrollWheelEvent`（无需 cliclick）。
+  - 窗口：`CGWindowList` 列出/前台/激活（handle = CGWindowID，rect 为点坐标）。
+  - 等待：`computer_wait` 的 window / title 条件在 Node 侧轮询。
+  - **接管提示条**：JXA + AppKit `NSPanel`（`nonactivatingPanel` + 浮层 + 跟随所有 Space），
+    **点击提示条任意位置即停止**，超时写 `reason=timeout` —— 与 Windows 的 `guard.ps1` 语义对齐。
+  - 控件树（snapshot/invoke/focus/set_value/select）、窗口移动/关闭：**明确报错**并指向
+    `docs/mac-backend.md`，不静默返回空结果。
+  - 全局停止热键：默认不做（`CGEventTap` 需要 C 回调，ObjC bridge 无法表达），留待真机验证。
+- **测试 88 → 160**（全部可在 Windows 上跑，macOS 侧一律注入假命令层）：
+  `tests/shared/{backend-select,contract}`（门禁与「真 tools.js + mac 后端」的契约）、
+  `tests/darwin/{png,keys,capture,input,observe,guard}`、`tests/platform/crop`；
+  `tests/windows` 保留原有 PowerShell 侧断言。新增「工具结果必须无损 JSON」的契约校验 —— 就是
+  0.5.10 里 #6 那类 `undefined` 字段问题，现在在 mac 侧也由测试兜住。
+- **单平台构建分支**：`scripts/crop-platform.mjs` 从 main 生成 `windows-only` / `mac-only` 快照
+  （删另一平台目录、收窄 `package.json` 的 `os`、在 `README` 顶部加来源标注），可随每次发版重跑。
+  npm 上仍是一个双平台包（一个包名只能发一个包）。
+- 文档：README 双语加平台矩阵与 macOS 授权步骤；新增 `docs/mac-backend.md`（后端契约、能力矩阵、
+  TCC 权限、真机验证清单、已知缺口）。
+
 ## 0.5.10 (2026-11-14)
 
 - **修 #6：`computer_activate_window` 报 `returned invalid output: value is not lossless JSON`。**

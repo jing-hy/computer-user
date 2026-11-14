@@ -13,10 +13,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { settingsNamespace } from '../src/settings-compat.js';
-import { apply as applyPlugin } from '../src/index.js';
+import { settingsNamespace } from '../../src/settings-compat.js';
+import { apply as applyPlugin } from '../../src/index.js';
 
-const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
+const srcDir = fileURLToPath(new URL('../../src/', import.meta.url));
 
 function makeCtx({ settings, commands } = {}) {
   const tools = [];
@@ -56,9 +56,10 @@ test('settingsNamespace accepts kebab-case names and rejects everything else', (
 
 test('issue #1 regression: no src file imports anything from @deepseek-ai/dsh-settings', () => {
   const offenders = [];
-  for (const file of readdirSync(srcDir)) {
+  // Recursive: src/platform/darwin/** is checked too, not just the top level.
+  for (const file of readdirSync(srcDir, { recursive: true })) {
     if (!file.endsWith('.js')) continue;
-    const text = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+    const text = readFileSync(new URL(`../../src/${file}`, import.meta.url), 'utf8');
     const lines = text.split('\n');
     lines.forEach((line, i) => {
       if (/^\s*(import|export)[^\n]*from\s+['"]@deepseek-ai\/dsh-settings['"]/.test(line)) {
@@ -70,7 +71,7 @@ test('issue #1 regression: no src file imports anything from @deepseek-ai/dsh-se
 });
 
 test('issue #1 regression: the shim lives in-tree and is part of the published files', () => {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   assert.ok(pkg.files.includes('src'), 'package.json "files" must ship src/ (where settings-compat.js lives)');
   assert.equal(typeof settingsNamespace, 'function');
 });

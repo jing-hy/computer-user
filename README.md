@@ -2,14 +2,14 @@
 
 # computer-user
 
-**Codex-style computer use for DeepSeek Harness on Windows.**
-The agent sees the screen, clicks, types — or drives named controls through UI Automation. No sidecar, no native build.
+**Codex-style computer use for DeepSeek Harness.**
+Full implementation on Windows: the agent sees the screen, clicks, types, and drives named UI Automation controls. macOS is an experimental backend (capture / pointer / keyboard / windows / pill, no control tree yet). No sidecar, no native build.
 
 [![npm](https://img.shields.io/npm/v/computer-user?color=blue)](https://www.npmjs.com/package/computer-user)
 [![downloads](https://img.shields.io/npm/dm/computer-user)](https://www.npmjs.com/package/computer-user)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#compatibility)
-[![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)](#development)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20(experimental)-0078D4)](#platform-support)
+[![tests](https://img.shields.io/badge/tests-160%20passing-brightgreen)](#development)
 
 English | [中文](README.zh.md)
 
@@ -21,8 +21,31 @@ English | [中文](README.zh.md)
 twenty-one `computer_*` tools: screenshot, UI Automation tree, pointer and keyboard input, window control, and a
 takeover pill with a global stop key that follows you across virtual desktops.
 
-It ships as a normal DSH plugin — `package.json`, one `cordis.patch.yml`, a settings card, and three PowerShell
-scripts. No native addon, no daemon process, no MCP bridge.
+It ships as a normal DSH plugin — `package.json`, one `cordis.patch.yml`, a settings card, and a backend
+chosen by platform (Windows: four PowerShell scripts; macOS: built-in `screencapture` / `osascript` plus optional
+`cliclick`). No native addon, no daemon process, no MCP bridge.
+
+## Platform support
+
+| Capability | Windows 10/11 | macOS (experimental) |
+|---|---|---|
+| Screenshot (full / region / scale) | ✅ multi-monitor virtual desktop | ✅ main display; Retina normalized to points |
+| Pointer click / move / drag / scroll / position | ✅ | ✅ (`brew install cliclick` needed for pointer) |
+| Keyboard chords / text (incl. CJK) | ✅ | ✅ (AppleScript `keystroke`, unicode ok) |
+| Window list / foreground / activate | ✅ | ✅ (`CGWindowList`) |
+| Window move / close | ✅ | ❌ explicit error (needs AX API) |
+| Control tree `snapshot` / `invoke` / `set_value` / `focus` | ✅ UIA | ❌ explicit error (needs AX API + TCC) |
+| Condition wait (`computer_wait`) | ✅ | ✅ |
+| Takeover pill + stop button + timeout latch | ✅ WPF | ✅ JXA/AppKit panel (click the pill to stop) |
+| Global stop **hotkey** | ✅ | ⚠️ off by default (`CGEventTap`, needs real-hardware check) |
+
+On macOS, grant the DSH app two permissions in “System Settings → Privacy & Security” before the first run:
+**Screen Recording** (otherwise `screencapture` sees nothing) and **Accessibility** (otherwise synthetic input is
+dropped and window details are missing). **Input Monitoring** is only needed for the optional global stop key.
+Restart DSH after granting. `computer_doctor` reports the active backend, the macOS version, whether
+`screencapture` / `osascript` / `cliclick` are on PATH, and `dpr_unverified` for the Retina mapping.
+
+See [docs/mac-backend.md](docs/mac-backend.md) for the backend contract and the known gaps.
 
 ## Why this one
 

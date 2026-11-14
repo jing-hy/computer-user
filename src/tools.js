@@ -680,6 +680,7 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
         mode: cfg.mode,
         tool_mode: cfg.tool_mode || 'all',
         stop_hotkey: cfg.stop_hotkey || 'ctrl+alt+esc',
+        ...(probe.global_hotkey === undefined ? {} : { global_hotkey: probe.global_hotkey }),
         ...(foreground ? { foreground: { handle: foreground.handle, title: foreground.title } } : {}),
       };
     },
