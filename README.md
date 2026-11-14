@@ -1,3 +1,6 @@
+> **macOS 专用构建 / macOS-only build** — 这个分支由 scripts/crop-platform.mjs 从 main 生成，只包含一个平台的后端；主开发线 main 是双平台。
+> Source commit: e4e9599ae0869f40823574894ce7ec1874eab90c
+
 <div align="center">
 
 # computer-user

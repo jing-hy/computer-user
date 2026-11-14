@@ -1,7 +1,7 @@
 {
   "name": "computer-user",
   "version": "0.6.1",
-  "description": "Codex-style computer use for DeepSeek Harness: screenshot, UI Automation controls (Windows), pointer and keyboard. Experimental macOS backend.",
+  "description": "Codex-style computer use for DeepSeek Harness: screenshot, UI Automation controls (Windows), pointer and keyboard. Experimental macOS backend. — macOS 专用构建 / macOS-only build",
   "icon": "assets/icon.png",
   "type": "module",
   "main": "src/index.js",
@@ -49,7 +49,6 @@
     "node": "^22.19 || >=24"
   },
   "os": [
-    "win32",
     "darwin"
   ],
   "dsh": {
@@ -71,7 +70,10 @@
   "homepage": "https://github.com/jing-hy/computer-user#readme",
   "bugs": {
     "url": "https://github.com/jing-hy/computer-user/issues"
+  },
+  "platformBuild": {
+    "platform": "darwin",
+    "generatedFrom": "e4e9599ae0869f40823574894ce7ec1874eab90c",
+    "generatedAt": "2026-11-14T13:33:10.524Z"
   }
 }
-
-

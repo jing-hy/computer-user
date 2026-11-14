@@ -15,7 +15,7 @@
  * @module backend
  */
 
-import * as windows from './ps.js';
+
 import { darwinBackend } from './platform/darwin/index.js';
 
 /**
@@ -26,14 +26,6 @@ import { darwinBackend } from './platform/darwin/index.js';
  * @throws {Error} on platforms this plugin does not support
  */
 export function selectBackend(platform = process.platform) {
-  if (platform === 'win32') {
-    return {
-      ...windows,
-      id: 'windows',
-      platform: 'win32',
-      scripts: { capture: 'capture.ps1', input: 'input.ps1', observe: 'observe.ps1', guard: 'guard.ps1' },
-    };
-  }
   if (platform === 'darwin') return { ...darwinBackend, id: 'darwin', platform: 'darwin' };
   throw new Error(
     'computer-user 仅支持 Windows 与 macOS（当前平台 ' + platform + '）。' +

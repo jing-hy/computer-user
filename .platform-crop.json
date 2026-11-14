@@ -1,0 +1,27 @@
+{
+  "platform": "darwin",
+  "sourceCommit": "e4e9599ae0869f40823574894ce7ec1874eab90c",
+  "createdAt": "2026-11-14T13:33:10.526Z",
+  "removed": [
+    "scripts/smoke-cmd-wheel.ps1",
+    "scripts/smoke-cmd.ps1",
+    "scripts/smoke-exec.ps1",
+    "scripts/smoke-exec2.ps1",
+    "scripts/smoke-keypress.ps1",
+    "scripts/smoke-pointer.ps1",
+    "scripts/smoke-winforms.ps1",
+    "src/capture.ps1",
+    "src/guard.ps1",
+    "src/input.ps1",
+    "src/observe.ps1",
+    "src/ps.js",
+    "tests/platform/crop.test.js",
+    "tests/shared/backend-select.test.js",
+    "tests/shared/contract.test.js",
+    "tests/windows/computer-user-extended.test.js",
+    "tests/windows/computer-user.test.js"
+  ],
+  "packageOs": [
+    "darwin"
+  ]
+}
