@@ -172,13 +172,17 @@ export function applyCrop({ root, outDir, platform }) {
   pkg.platformBuild = { platform, generatedFrom: plan.commit, generatedAt: new Date().toISOString() };
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + String.fromCharCode(10), 'utf8');
 
-  const banner = '> **' + spec.label + '** — 这个分支由 scripts/crop-platform.mjs 从 main 生成，' +
-    '只包含一个平台的后端；主开发线 main 是双平台。' +
-    String.fromCharCode(10) + '> Source commit: ' + plan.commit + String.fromCharCode(10) +
-    String.fromCharCode(10);
-  for (const readme of ['README.md', 'README.zh.md']) {
+  const nl = String.fromCharCode(10);
+  const banners = {
+    'README.md': '> **' + spec.label + '** — 这个分支由 scripts/crop-platform.mjs 从 main 生成，' +
+      '只包含一个平台的后端；主开发线 main 是双平台。',
+    'README.en.md': '> **' + spec.label + '** — generated from `main` by scripts/crop-platform.mjs; this branch ' +
+      'carries a single-platform backend only (main is the dual-platform line).',
+  };
+  for (const readme of ['README.md', 'README.en.md']) {
     const target = join(outDir, readme);
     if (!existsSync(target)) continue;
+    const banner = banners[readme] + nl + '> Source commit: ' + plan.commit + nl + nl;
     writeFileSync(target, banner + readFileSync(target, 'utf8'), 'utf8');
   }
 
