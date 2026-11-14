@@ -53,6 +53,8 @@ test('registers exactly the 21 computer_* tools, side-effecting ones non-concurr
   ]);
   for (const t of tools) {
     assert.match(t.name, /^computer_/);
+    assert.equal(typeof t.description, 'string', t.name + ' description must be a string');
+    assert.ok(t.description.length > 0, t.name + ' description must be non-empty');
     assert.equal(typeof t.execute, 'function');
     assert.equal(typeof t.isConcurrencySafe(), 'boolean', t.name + ' must declare concurrency safety');
     if (!readonly.has(t.name)) assert.equal(t.isConcurrencySafe(), false, t.name + ' has side effects');

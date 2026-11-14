@@ -745,6 +745,11 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
     computerSetMode,
   ];
 
+  // Flatten array descriptions before tool_mode filtering so no early return leaks raw arrays.
+  for (const tool of tools) {
+    if (Array.isArray(tool.description)) tool.description = tool.description.join(' ');
+  }
+
   // tool_mode: all (default) | lite | custom (enabled_tools allow-list).
   const cfgNow = getConfig();
   const mode = String(cfgNow.tool_mode || 'all');
@@ -754,11 +759,6 @@ export function createComputerTools({ runPs, getConfig, approvedSessions, sessio
       ? new Set(cfgNow.enabled_tools.map(String))
       : null;
     if (allow) return tools.filter((t) => allow.has(t.name));
-  }
-  return tools;
-
-  for (const tool of tools) {
-    if (Array.isArray(tool.description)) tool.description = tool.description.join(' ');
   }
 
   return tools;
