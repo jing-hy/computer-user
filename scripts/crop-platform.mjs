@@ -29,7 +29,14 @@ export const PLATFORM_SPEC = {
     os: ['win32'],
     label: 'Windows 专用构建 / Windows-only build',
     branch: 'windows-only',
-    dropPaths: ['src/platform/darwin', 'tests/darwin'],
+    dropPaths: [
+      'src/platform/darwin',
+      'tests/darwin',
+      // These exercise BOTH backends, so they only make sense on main.
+      'tests/platform',
+      'tests/shared/backend-select.test.js',
+      'tests/shared/contract.test.js',
+    ],
     stripBackend: 'darwin',
     tools: 'PowerShell + UIA',
   },
@@ -44,6 +51,10 @@ export const PLATFORM_SPEC = {
       'src/guard.ps1',
       'src/ps.js',
       'tests/windows',
+      // Both-backend tests stay on main only.
+      'tests/platform',
+      'tests/shared/backend-select.test.js',
+      'tests/shared/contract.test.js',
       'scripts/smoke-cmd-wheel.ps1',
       'scripts/smoke-cmd.ps1',
       'scripts/smoke-exec.ps1',
