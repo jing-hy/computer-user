@@ -31,7 +31,7 @@ import backend, { runPs, isStopped, stopReason, clearStop, ensureGuard, stopGuar
 import { createOutputGuard } from './output-guard.js';
 
 export const name = 'computer-user';
-export const version = '0.6.1';
+export const version = '0.6.2';
 
 /** Services required at runtime. */
 export const inject = ['tools'];
@@ -94,6 +94,30 @@ export function toggleApproval(approvedSessions, targets) {
 }
 
 /**
+ * The shared volatile-reference protocol (@deepseek-ai/cosmokit): a live config
+ * reference exposes `get()` and carries this brand symbol, which is why the
+ * brand is looked up by `Symbol.for` instead of imported from the host.
+ */
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write');
+
+/**
+ * Flatten a resolved plugin Config into ordinary values: a volatile reference
+ * exposes its snapshot through `get()`, a plain object is copied field by field.
+ * Mirrors the host's own `plainConfig`, so the result matches what the settings
+ * form would show.
+ * @param {unknown} value
+ * @returns {unknown}
+ */
+export function plainConfigOf(value) {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(plainConfigOf);
+  if (typeof value === 'object' && VOLATILE_WRITE in value && typeof value.get === 'function') {
+    return plainConfigOf(value.get());
+  }
+  return Object.fromEntries(Object.keys(value).map((key) => [key, plainConfigOf(value[key])]));
+}
+
+/**
  * Wrap an assistant stream so fake tool-call text written as conversation is
  * replaced by a one-time coaching note (the `output_guard` preference).
  * @param {AsyncIterable<object>} upstream
@@ -101,11 +125,19 @@ export function toggleApproval(approvedSessions, targets) {
  * @returns {AsyncIterable<object>}
  */
 export async function* guardStream(upstream, getCfg) {
+  // Resolve the preference ONCE per stream. Reading it inside the loop put a
+  // full settings-form rebuild on every text delta: on 0.2.x the live reader is
+  // `SettingsForms.describe()`, which rebuilds every active profile entry's
+  // form + schema JSON + revision string (~50 ms and ~1 MB of garbage at 238
+  // entries on this machine). At 200 chunks/s that pinned streaming at ~18 tok/s
+  // (issue #8). Toggling `output_guard` now takes effect on the next stream
+  // instead of mid-stream, which costs nothing: the setting is a per-response
+  // policy, not a per-token one.
+  const cfg = typeof getCfg === 'function' ? getCfg() : getCfg;
+  if (cfg && cfg.output_guard === false) { yield* upstream; return; }
   const guard = createOutputGuard({ allowAfter: 2 });
   let noteShown = false;
   for await (const chunk of upstream) {
-    const cfg = getCfg();
-    if (cfg && cfg.output_guard === false) { yield chunk; continue; }
     if (chunk && chunk.type === 'text-delta' && typeof chunk.text === 'string') {
       const decision = guard.sniff(chunk.text);
       if (decision.kind === 'reject') {
@@ -133,11 +165,67 @@ export function apply(ctx, config) {
   };
 
   const baseConfig = config ?? {};
+
+  /**
+   * Resolve the live Config from the plugin fiber when the host exposes it.
+   * cordis keeps the resolved value on `fiber._effectiveConfig`, so this read is
+   * O(1) and still live for every `.volatile()` field (a live settings write
+   * updates that field without remounting the plugin). It is deliberately
+   * preferred over the settings service: on 0.2.x `settings.read()` is
+   * `SettingsForms.describe()`, which rebuilds EVERY active profile entry's
+   * form, schema JSON and revision string on each call — measured ~50 ms and
+   * ~1 MB of garbage per call at 238 entries on this machine.
+   * @returns {object|undefined}
+   */
+  const fiberConfig = () => {
+    try {
+      const resolved = ctx?.fiber?.effectiveConfig;
+      if (resolved === undefined || resolved === null) return undefined;
+      const plain = plainConfigOf(resolved);
+      return plain && typeof plain === 'object' ? plain : undefined;
+    } catch { return undefined; }
+  };
+
+  /** Settings-form fallback window: describe() is far too expensive per chunk. */
+  const SETTINGS_SNAPSHOT_MS = 500;
+  let snapshotAt = 0;
+  let snapshotValue;
+  /** @returns {object|undefined} */
+  const settingsSnapshot = () => {
+    const now = Date.now();
+    if (snapshotAt !== 0 && now - snapshotAt < SETTINGS_SNAPSHOT_MS) return snapshotValue;
+    let value;
+    try { value = settings.read(); } catch { value = undefined; }
+    // Cache hits only: the tools are built before the async settings injection
+    // has wired the reader, so an early undefined must not stick for a window —
+    // a stale empty Config silently turns the mode gate off.
+    if (value !== undefined) {
+      snapshotAt = now;
+      snapshotValue = value;
+    }
+    return value;
+  };
+  const invalidateSnapshot = () => { snapshotAt = 0; snapshotValue = undefined; };
+
   const getConfig = () => {
-    let live;
-    try { live = settings.read(); } catch { /* ignore */ }
-    const value = live && typeof live === 'object' ? live : baseConfig;
-    return { ...baseConfig, ...value, mode: value.mode ?? baseConfig.mode ?? 'manual' };
+    const value = fiberConfig() ?? settingsSnapshot();
+    const live = value && typeof value === 'object' ? value : undefined;
+    return { ...baseConfig, ...live, mode: live?.mode ?? baseConfig.mode ?? 'manual' };
+  };
+
+  /**
+   * Write a new mode through whichever settings API the host offers, then drop
+   * the cached snapshot so the next read sees it (the mode gate must not lag).
+   * @param {string} mode
+   */
+  const setMode = async (mode) => {
+    invalidateSnapshot();
+    if (typeof settings.setMode !== 'function') throw new TypeError('computer-user: settings service unavailable');
+    try {
+      await settings.setMode(mode);
+    } finally {
+      invalidateSnapshot();
+    }
   };
 
   // ── register tools ──
@@ -146,7 +234,7 @@ export function apply(ctx, config) {
   // wiring below) alive.
   ctx.effect(() => {
     const disposers = [];
-    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode: (m) => settings.setMode(m), isStopped, stopReason, ensureGuard, stopGuard })) {
+    for (const tool of createComputerTools({ runPs, getConfig, approvedSessions, sessionIds: [], setMode, isStopped, stopReason, ensureGuard, stopGuard })) {
       try {
         disposers.push(ctx.tools.register({
           ...tool,
@@ -157,7 +245,7 @@ export function apply(ctx, config) {
               exec?.agent?.session?.header?.sessionId,
               exec?.sessionId,
             ].filter(Boolean).map(String))];
-            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode: (m) => settings.setMode(m), isStopped, stopReason, ensureGuard, stopGuard });
+            const tools = createComputerTools({ runPs, getConfig, approvedSessions, sessionIds, setMode, isStopped, stopReason, ensureGuard, stopGuard });
             const realTool = tools.find((t) => t.name === tool.name);
             return realTool.execute(args, exec);
           },
@@ -247,13 +335,28 @@ export function apply(ctx, config) {
   //     text; first occurrence replaced with a coaching note, second chance
   //     (same fingerprint) passes through. Off when output_guard=false.
   //     0.2.x: the `llm/stream` waterfall; 0.1.x: a provider-registration proxy.
+  //     The 0.1.x provider proxy is only a FALLBACK: on 0.2.x the waterfall
+  //     exists and the adapter is reachable through it as well, so both layers
+  //     would guard the same chunk. Two layers are not just wasted work — the
+  //     outer one never sees the first fake text (the inner layer already
+  //     replaced it with the note), so the second occurrence of the same text
+  //     would be rejected again and the "passes the second time" promise breaks.
+  //     The proxy therefore uninstalls itself the first time the waterfall runs.
+  const providerGuards = [];
+  const unwrapProviderGuards = () => {
+    while (providerGuards.length > 0) {
+      const entry = providerGuards.pop();
+      try { entry.registration.adapter = entry.original; } catch { /* ignore */ }
+    }
+  };
+
   try {
     if (typeof ctx.on === 'function') {
       ctx.on('llm/stream', (_options, next) => {
-        const upstream = next();
-        const cfg = getConfig();
-        if (cfg && cfg.output_guard === false) return upstream;
-        return guardStream(upstream, getConfig);
+        // 0.2.x: this waterfall is the live path — retire the fallback proxy
+        // before next() resolves the adapter, so this stream is guarded once.
+        unwrapProviderGuards();
+        return guardStream(next(), getConfig);
       });
     }
     ctx.inject(['llm'], (sctx) => {
@@ -282,6 +385,7 @@ export function apply(ctx, config) {
           });
           Object.defineProperty(guardProxy, '__cuOutputGuard', { value: true, enumerable: false, configurable: true });
           reg.adapter = guardProxy;
+          providerGuards.push({ registration: reg, original: orig });
           wrapped++;
         }
         if (wrapped > 0) ctx.logger?.info?.(`[computer-user] output guard active on ${wrapped} provider(s)`);

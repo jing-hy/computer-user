@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.2 (2026-11-21)
+
+**修复流式输出速率骤降（issue #8）：输出过滤器不再每个 chunk 读一次配置。**
+
+- **根因。** `llm/stream` 上的输出过滤器对**每个** text-delta 调一次 `getConfig()`；0.2.x 的实时读法是
+  `SettingsForms.describe()`，每次调用重建全部活跃 profile 条目的表单 + schema JSON + revision 串
+  （本机 238 条目实测约 50 ms、约 1 MB 垃圾），还要先跑一遍 `configEditor.configuration()`
+  （同步重读并 YAML 解析整个 profile，约 4.5 ms）。放在热路径上等于每个 token 同步阻塞几十毫秒，
+  流式速率被钉在 16–18 tok/s；插件越多、schema 越大越明显，禁用即恢复 —— 与该插件是否真的被调用无关。
+- **实时 Config 改走 fiber。** 优先读插件 fiber 上已解析的 Config（`fiber.effectiveConfig`，O(1)，
+  `.volatile()` 字段依然是实时的）；只有宿主不暴露它时才走设置服务，且结果在 500 ms 内复用。
+  仅缓存成功读取 —— 插件装载早于 settings 注入，那时的 `undefined` 不能钉住一个窗口，否则模式门禁会空读。
+- **每条流只解析一次 `output_guard`**（此前每 chunk 一次）。流中途切换该开关改为下一条流生效。
+- **0.1.x 的 provider 代理自动卸载。** 0.2.x 上 waterfall 与代理会同时生效，同一个 chunk 被两层 guard
+  各判定一次 —— 除了双倍开销，还让「同一内容第二次放行」失效（外层看不到内层已替换掉的第一次假调用）。
+  现在 waterfall 第一次运行时就把代理还原。
+- 测试 160 → 167（`tests/shared/stream-hot-path.test.js`）：每流只读一次偏好、fiber 路径不碰
+  `describe()`、回退路径有缓存、volatile 引用展平、代理自卸载。
+- README 增加「输出过滤器（`output_guard`）」小节：它挂在哪、代价是多少、关掉会失去什么。
+
 ## 0.6.1 (2026-11-14)
 
 - 文档：README 改为**中文（默认）**并整体重写；英文版保留为 `README.en.md`；删除内容重复的 `README.zh.md`。

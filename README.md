@@ -151,7 +151,7 @@ computer_screenshot            -> 验证（可传 expected_window 做围栏）
 | `default_scale` | `1` | 截图默认缩放 0.1–1 |
 | `typing_interval_ms` | `0` | 逐字输入间隔（双平台） |
 | `scroll_units` | `1` | 每次滚动的格数（Windows 每格 120 WHEEL delta；macOS 每格 3 行） |
-| `output_guard` | `true` | 把伪工具调用/XML 写成对话文本时打回；同内容第二次放行 |
+| `output_guard` | `true` | 把伪工具调用/XML 写成对话文本时打回；同内容第二次放行（见下节「输出过滤器」） |
 | `debug` | `false` | 日志里打印当前后端与脚本路径 |
 | `tool_mode` | `all` | `all` / `lite` / `custom` |
 | `enabled_tools` | `[]` | `custom` 时的白名单（空 = 全部） |
@@ -160,6 +160,23 @@ computer_screenshot            -> 验证（可传 expected_window 做围栏）
 | `takeover_message` | 空 | 提示条标题；`{key}` 会替换成热键 |
 | `cdp_port` | `0` | Chromium `--remote-debugging-port`，供 `computer_browser` 使用（`0` = 关闭） |
 | `approve_observe` | `false` | 开启后，截图 / 控件快照 / 窗口列表在 `manual` 模式下也要 `/computer` |
+
+### 输出过滤器（`output_guard`）
+
+它拦的是**模型把工具调用写成对话文本**这种情况（例如正文里输出 `computer_click({...})` 或 `<invoke …>`）：
+第一次出现替换成一条提示，让模型改用真正的工具调用；同样的内容第二次出现就放行，不会死循环。
+
+- **作用范围：每一条流式输出。** 它挂在宿主的 `llm/stream` waterfall 上（老内核没有这个 waterfall 时，退化为
+  给每个 provider 的 `adapter.stream()` 套一层代理）。跟你在这一轮里有没有真的调用电脑操作工具无关。
+- **代价：每条流读一次设置，不是每个 token 一次。** 0.6.2 起，实时配置直接取插件 fiber 上已解析的 Config
+  （O(1)）；只有宿主不暴露它时才走设置服务，且 500 ms 内复用同一份快照。所以流式吞吐不受影响。
+- **关掉会失去什么：** 模型若把工具调用写成对话文本，这段文本会原样出现在回答里，也不会被纠正。除此之外
+  没有别的副作用 —— 工具、权限、急停都不受影响。
+
+> 0.6.1 及以前是**每个 chunk** 读一次配置。DSH 0.2.x 的实时读法是 `SettingsForms.describe()`：每次调用会重建
+> 全部活跃 profile 条目的表单、schema JSON 与 revision 串（本机 238 条目实测约 50 ms、约 1 MB 垃圾）。放在
+> 流式热路径上等于每个 token 同步阻塞几十毫秒，于是流式速率被钉在 16–18 tok/s（issue #8）；插件装得越多、
+> 字段越复杂越明显，禁用插件即恢复。0.6.2 修正了这条路径。
 
 ## 安全模型
 

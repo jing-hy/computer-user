@@ -1,6 +1,6 @@
 {
   "name": "computer-user",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Codex-style computer use for DeepSeek Harness: screenshot, UI Automation controls (Windows), pointer and keyboard. Experimental macOS backend.",
   "icon": "assets/icon.png",
   "type": "module",

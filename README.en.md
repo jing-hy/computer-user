@@ -147,6 +147,27 @@ This card writes the plugin entry Config (all fields hot-reloadable).
 | `cdp_port` | `0` | Chromium `--remote-debugging-port` for `computer_browser` (`0` = off) |
 | `approve_observe` | `false` | When on, screenshots / UIA snapshots / window lists also need `/computer` in `manual` |
 
+### Output guard (`output_guard`)
+
+It catches one specific failure: the model **writing a tool call as conversation text** (e.g. `computer_click({...})`
+or `<invoke …>` in prose). The first occurrence is replaced by a coaching note that tells the model to make a real
+tool call; the same text passes on its second occurrence, so it can never loop.
+
+- **Scope: every streamed response.** It sits on the host's `llm/stream` waterfall (on hosts without that waterfall
+  it falls back to wrapping each provider's `adapter.stream()`). It runs whether or not you called a computer tool
+  in that turn.
+- **Cost: one Config read per stream, not one per token.** Since 0.6.2 the live value comes straight off the plugin
+  fiber's resolved Config (O(1)); only when the host does not expose it does the plugin consult the settings service,
+  and then the result is reused for 500 ms. Streaming throughput is unaffected.
+- **What you lose by turning it off:** fake tool-call text shows up in the answer verbatim and is never corrected.
+  Nothing else changes — tools, permissions and the stop switch are untouched.
+
+> Up to 0.6.1 the guard read the Config **per chunk**. On DSH 0.2.x that read is `SettingsForms.describe()`, which
+> rebuilds every active profile entry's form, schema JSON and revision string on each call (measured: ~50 ms and
+> ~1 MB of garbage at 238 entries). On the streaming hot path that is tens of milliseconds of synchronous blocking
+> per token, which pinned streaming at 16–18 tok/s (issue #8) — worse with more plugins, gone when the plugin is
+> disabled. 0.6.2 fixes that path.
+
 ## Safety model
 
 - **Modes.** `disabled` / `readonly` / `manual` / `auto`. Observation tools stay available in `readonly`.
